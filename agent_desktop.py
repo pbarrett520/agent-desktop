@@ -257,6 +257,8 @@ def init_session_state():
         st.session_state.show_add_provider = False
     if "editing_provider" not in st.session_state:
         st.session_state.editing_provider = None
+    if "token_usage" not in st.session_state:
+        st.session_state.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
 def save_and_sync_config():
@@ -376,6 +378,40 @@ def render_sidebar():
     if confirm != config.get("confirm_before_execute"):
         config["confirm_before_execute"] = confirm
         save_and_sync_config()
+
+    # ---------- Token Usage Display ----------
+    token_usage = st.session_state.get("token_usage", {})
+    total_tokens = token_usage.get("total_tokens", 0)
+    
+    if total_tokens > 0:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("Token Usage")
+        
+        prompt_tokens = token_usage.get("prompt_tokens", 0)
+        completion_tokens = token_usage.get("completion_tokens", 0)
+        
+        # Estimated cost (defaults: $0.01/1K prompt, $0.03/1K completion)
+        prompt_cost = (prompt_tokens / 1000) * 0.01
+        completion_cost = (completion_tokens / 1000) * 0.03
+        total_cost = prompt_cost + completion_cost
+        
+        # Use markdown for better visibility
+        st.sidebar.markdown(f"""
+<div style="font-family: monospace; font-size: 14px; color: #F0F6FC;">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span>Prompt:</span><span style="color: #79C0FF;">{prompt_tokens:,}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span>Completion:</span><span style="color: #7EE787;">{completion_tokens:,}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; border-top: 1px solid #30363D; padding-top: 4px;">
+        <span><strong>Total:</strong></span><span style="color: #F0F6FC;"><strong>{total_tokens:,}</strong></span>
+    </div>
+    <div style="color: #D29922; font-size: 13px;">
+        💰 Est. cost: ${total_cost:.4f}
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 def render_provider_form():
@@ -802,6 +838,9 @@ def render_agent_mode(config: dict):
         steps_container = st.container()
 
         try:
+            # Reset token usage for new task
+            st.session_state.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            
             # Run the agent loop
             for step in run_agent_loop(
                 client=client,
@@ -811,10 +850,17 @@ def render_agent_mode(config: dict):
                 max_steps=20,
             ):
                 st.session_state.agent_steps.append(step)
+                
+                # Accumulate token usage if this step has usage info
+                if step.type == "usage" and step.usage:
+                    st.session_state.token_usage["prompt_tokens"] += step.usage.get("prompt_tokens", 0)
+                    st.session_state.token_usage["completion_tokens"] += step.usage.get("completion_tokens", 0)
+                    st.session_state.token_usage["total_tokens"] += step.usage.get("total_tokens", 0)
 
-                # Display the step
-                with steps_container:
-                    display_agent_step(step)
+                # Display the step (skip usage steps - they're for tracking only)
+                if step.type != "usage":
+                    with steps_container:
+                        display_agent_step(step)
 
                 # Check if complete or error
                 if step.type in ("complete", "error"):
@@ -1012,19 +1058,68 @@ def main():
         box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
     }
     
-    /* Code blocks - clean terminal style */
-    .stCodeBlock {
+    /* Code blocks - clean terminal style with dark background */
+    .stCodeBlock, [data-testid="stCodeBlock"] {
         border: 1px solid var(--border-color);
         border-radius: 6px;
-        background: var(--bg-card);
+        background: var(--bg-card) !important;
     }
     
-    /* Expanders */
-    .streamlit-expanderHeader {
-        background: var(--bg-card);
+    .stCodeBlock code, [data-testid="stCodeBlock"] code {
+        color: var(--text-primary) !important;
+        background: var(--bg-card) !important;
+    }
+    
+    .stCodeBlock pre, [data-testid="stCodeBlock"] pre {
+        background: var(--bg-card) !important;
+    }
+    
+    /* Expanders - ensure dark theme */
+    .streamlit-expanderHeader,
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] > details > summary {
+        background: var(--bg-card) !important;
         border-radius: 6px;
         border: 1px solid var(--border-color);
         font-weight: 500;
+        color: var(--text-primary) !important;
+    }
+    
+    [data-testid="stExpander"] summary p,
+    [data-testid="stExpander"] summary span {
+        color: var(--text-primary) !important;
+    }
+    
+    [data-testid="stExpander"] > details {
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+    }
+    
+    [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+        background: var(--bg-card) !important;
+    }
+    
+    /* JSON viewer inside expanders */
+    [data-testid="stJson"], .stJson {
+        background: var(--bg-card) !important;
+    }
+    
+    [data-testid="stJson"] *, .stJson * {
+        color: var(--text-secondary) !important;
+        background: transparent !important;
+    }
+    
+    [data-testid="stJson"] .string {
+        color: #7EE787 !important;
+    }
+    
+    [data-testid="stJson"] .number {
+        color: #79C0FF !important;
+    }
+    
+    [data-testid="stJson"] .key {
+        color: #FF7B72 !important;
     }
     
     /* Select boxes */
@@ -1096,9 +1191,18 @@ def main():
         color: var(--text-primary) !important;
     }
     
-    /* Expander text */
-    .streamlit-expanderHeader p {
+    /* Expander text - all text inside expanders */
+    .streamlit-expanderHeader p,
+    [data-testid="stExpander"] p,
+    [data-testid="stExpanderDetails"] p {
         color: var(--text-primary) !important;
+    }
+    
+    /* Code inside expanders - ensure visibility */
+    [data-testid="stExpanderDetails"] code,
+    [data-testid="stExpanderDetails"] pre {
+        background: #1a1f26 !important;
+        color: #e6edf3 !important;
     }
     
     /* Radio button text */

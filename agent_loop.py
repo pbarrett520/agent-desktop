@@ -38,11 +38,12 @@ class AgentMessage:
 class AgentStep:
     """A single step in the agent's execution."""
     step_number: int
-    type: str  # "thinking", "tool_call", "tool_result", "complete", "error"
+    type: str  # "thinking", "tool_call", "tool_result", "complete", "error", "usage"
     content: str
     tool_name: str = None
     tool_args: dict = None
     tool_result: ToolResult = None
+    usage: dict = None  # Token usage info: {"prompt_tokens": X, "completion_tokens": Y, "total_tokens": Z}
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are an AI assistant that helps users accomplish tasks by executing commands and managing files.
@@ -126,6 +127,22 @@ def run_agent_loop(
             )
             
             message = response.choices[0].message
+            
+            # Yield usage info if available
+            if response.usage:
+                usage_step = AgentStep(
+                    step_number=step_number,
+                    type="usage",
+                    content="",
+                    usage={
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                    }
+                )
+                if on_step:
+                    on_step(usage_step)
+                yield usage_step
             
             # Check if the model wants to use tools
             if message.tool_calls:

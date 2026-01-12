@@ -7,6 +7,7 @@ calling and can also be exposed as an MCP server.
 """
 
 import os
+import re
 import subprocess
 import sys
 import shutil
@@ -52,6 +53,85 @@ else:
 
     def _get_windows_known_folder(folder_name: str) -> str | None:
         return None
+
+
+# =============================================================================
+# Command Safety Blocklist
+# =============================================================================
+
+# Patterns that should NEVER execute - catastrophic/dangerous commands
+BLOCKED_PATTERNS = [
+    # Unix/Linux destructive commands
+    r"rm\s+-rf\s+[/~*]",            # rm -rf /, ~, or *
+    r"rm\s+-fr\s+[/~*]",            # rm -fr variant
+    r"mkfs\.",                       # mkfs.* (filesystem format)
+    r"dd\s+if=.*\s+of=/dev/",       # dd writing to devices
+    r"chmod\s+-R\s+777\s+/",        # chmod -R 777 /
+    r":\(\)\{.*:\|:.*\}",           # fork bomb pattern
+    
+    # Windows CMD destructive commands
+    r"del\s+/s\s+/q\s+C:\\",        # del /s /q C:\
+    r"format\s+C:",                  # format C:
+    r"reg\s+delete\s+HKLM",         # registry delete HKLM
+    
+    # PowerShell destructive commands
+    r"Remove-Item\s+.*-Recurse\s+.*-Force\s+[C:\\/$~]",  # Remove-Item -Recurse -Force C:\ or / or ~
+    r"Remove-Item\s+.*-Force\s+.*-Recurse\s+[C:\\/$~]",  # Remove-Item -Force -Recurse variant
+    r"rm\s+.*-r\s+.*-fo\s+[C:\\/$~]",                    # PowerShell rm -r -fo alias
+    r"Format-Volume\s+",             # PowerShell format volume
+    r"Clear-Disk\s+",                # PowerShell clear disk
+    r"Initialize-Disk\s+",           # PowerShell initialize disk (data loss)
+    r"Remove-Partition\s+",          # PowerShell remove partition
+    r"Set-ExecutionPolicy\s+Unrestricted",  # Dangerous policy change
+    
+    # Remote code execution patterns (cross-platform)
+    r"curl\s+.*\|\s*sh",            # curl piped to sh
+    r"curl\s+.*\|\s*bash",          # curl piped to bash
+    r"wget\s+.*\|\s*sh",            # wget piped to sh
+    r"wget\s+.*\|\s*bash",          # wget piped to bash
+    r"Invoke-Expression.*Invoke-WebRequest",  # PowerShell IEX(IWR ...) pattern
+    r"iex.*iwr",                     # PowerShell IEX(IWR) short form
+    r"Invoke-Expression.*curl",      # PowerShell IEX curl
+    r"Invoke-Expression.*wget",      # PowerShell IEX wget
+    r"powershell\s+-enc",           # powershell encoded commands
+    r"powershell\s+-e\s",           # powershell -e (short for -EncodedCommand)
+    r"powershell\.exe\s+-enc",      # powershell.exe encoded
+    r"pwsh\s+-enc",                 # pwsh encoded commands
+]
+
+# Patterns to be aware of but allow - potentially dangerous
+WARN_PATTERNS = [
+    # Unix/Linux
+    r"rm\s+-r",                     # any recursive delete
+    r"sudo\s+",                     # sudo commands
+    r"shutdown",                    # shutdown command
+    r"reboot",                      # reboot command
+    
+    # Windows CMD
+    r"del\s+/s",                    # Windows recursive delete
+    
+    # PowerShell
+    r"Remove-Item\s+.*-Recurse",    # PowerShell recursive delete
+    r"Stop-Computer",               # PowerShell shutdown
+    r"Restart-Computer",            # PowerShell reboot
+    r"Stop-Process\s+.*-Force",     # Force kill processes
+    r"Clear-Content",               # Clear file contents
+    r"Set-ExecutionPolicy",         # Execution policy changes
+]
+
+
+def check_command_safety(command: str) -> tuple[bool, str]:
+    """
+    Check if a command is safe to execute.
+    
+    Returns:
+        (True, "") if safe
+        (False, reason) if blocked
+    """
+    for pattern in BLOCKED_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return False, f"Command blocked: matches dangerous pattern '{pattern}'"
+    return True, ""
 
 
 def _expand_path(path: str, cwd: str) -> str:
@@ -274,6 +354,69 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": "Delete a file. Use with caution.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to delete",
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Must be true to confirm deletion",
+                    },
+                },
+                "required": ["path", "confirm"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "copy_file",
+            "description": "Copy a file to a new location.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Path to the source file",
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "Path to the destination",
+                    },
+                },
+                "required": ["source", "destination"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "move_file",
+            "description": "Move or rename a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Path to the source file",
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "Path to the destination",
+                    },
+                },
+                "required": ["source", "destination"],
+            },
+        },
+    },
 ]
 
 
@@ -285,6 +428,11 @@ TOOL_DEFINITIONS = [
 def run_command(command: str, working_dir: str = None, timeout: int = 60) -> ToolResult:
     """Execute a shell command."""
     global _session
+
+    # Check command safety first
+    is_safe, reason = check_command_safety(command)
+    if not is_safe:
+        return ToolResult(success=False, output="", error=reason)
 
     # Expand working directory (handles ~, relative paths, and Windows known folders like Desktop)
     if working_dir:
@@ -470,6 +618,79 @@ def task_complete(summary: str, files_modified: list = None) -> ToolResult:
     return ToolResult(success=True, output=output)
 
 
+def delete_file(path: str, confirm: bool) -> ToolResult:
+    """Delete a file. Requires confirm=True to proceed."""
+    try:
+        if not confirm:
+            return ToolResult(
+                success=False,
+                output="",
+                error="Deletion not confirmed. Set confirm=True to delete the file."
+            )
+
+        # Expand path (handles ~, relative paths, and Windows known folders like Desktop)
+        file_path = Path(_expand_path(path, _session.cwd))
+
+        if not file_path.exists():
+            return ToolResult(success=False, output="", error=f"File not found: {file_path}")
+
+        if file_path.is_dir():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Cannot delete directory with delete_file. Use run_command for directories: {file_path}"
+            )
+
+        file_path.unlink()
+        return ToolResult(success=True, output=f"Deleted: {file_path}")
+
+    except Exception as e:
+        return ToolResult(success=False, output="", error=str(e))
+
+
+def copy_file(source: str, destination: str) -> ToolResult:
+    """Copy a file to a new location."""
+    try:
+        # Expand paths (handles ~, relative paths, and Windows known folders like Desktop)
+        src_path = Path(_expand_path(source, _session.cwd))
+        dst_path = Path(_expand_path(destination, _session.cwd))
+
+        if not src_path.exists():
+            return ToolResult(success=False, output="", error=f"Source file not found: {src_path}")
+
+        if not src_path.is_file():
+            return ToolResult(success=False, output="", error=f"Source is not a file: {src_path}")
+
+        # Create parent directories if needed
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(src_path, dst_path)
+        return ToolResult(success=True, output=f"Copied: {src_path} -> {dst_path}")
+
+    except Exception as e:
+        return ToolResult(success=False, output="", error=str(e))
+
+
+def move_file(source: str, destination: str) -> ToolResult:
+    """Move or rename a file."""
+    try:
+        # Expand paths (handles ~, relative paths, and Windows known folders like Desktop)
+        src_path = Path(_expand_path(source, _session.cwd))
+        dst_path = Path(_expand_path(destination, _session.cwd))
+
+        if not src_path.exists():
+            return ToolResult(success=False, output="", error=f"Source file not found: {src_path}")
+
+        # Create parent directories if needed
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+        shutil.move(str(src_path), str(dst_path))
+        return ToolResult(success=True, output=f"Moved: {src_path} -> {dst_path}")
+
+    except Exception as e:
+        return ToolResult(success=False, output="", error=str(e))
+
+
 # =============================================================================
 # Tool Dispatcher
 # =============================================================================
@@ -482,6 +703,9 @@ TOOL_FUNCTIONS = {
     "get_current_directory": get_current_directory,
     "change_directory": change_directory,
     "task_complete": task_complete,
+    "delete_file": delete_file,
+    "copy_file": copy_file,
+    "move_file": move_file,
 }
 
 
