@@ -55,6 +55,9 @@ You have access to the following tools:
 - list_directory: List directory contents
 - get_current_directory: Get current working directory
 - change_directory: Change working directory
+- delete_file: Delete a file (requires confirm=True)
+- copy_file: Copy a file to a new location
+- move_file: Move or rename a file
 - task_complete: Signal that the task is finished
 
 CRITICAL RULES:
@@ -64,6 +67,8 @@ CRITICAL RULES:
 4. Break complex tasks into smaller steps
 5. If a command fails, try to understand why and fix it
 6. Be careful with destructive operations - list files before deleting
+7. Prefer using delete_file, copy_file, move_file over shell commands when possible
+8. Always set confirm=True when calling delete_file after verifying the file to delete
 
 {os_instructions}
 
