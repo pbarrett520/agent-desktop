@@ -866,10 +866,14 @@ def render_agent_mode(config: dict):
                 if step.type in ("complete", "error"):
                     st.session_state.agent_running = False
                     break
+            
+            # Rerun to update sidebar with token usage
+            st.rerun()
 
         except Exception as e:
             st.error(f"Agent error: {e}")
             st.session_state.agent_running = False
+            st.rerun()
 
     # Display previous steps if any
     if st.session_state.agent_steps and not start_clicked:
