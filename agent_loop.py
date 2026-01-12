@@ -6,11 +6,22 @@ iteratively call tools until the task is complete.
 """
 
 import json
+import sys
 from typing import Generator, Callable, Optional
 from dataclasses import dataclass
 from openai import OpenAI, AzureOpenAI
 
 from tools import TOOL_DEFINITIONS, execute_tool, ToolResult, reset_session
+
+
+def get_os_instructions() -> str:
+    """Get OS-specific instructions for the system prompt."""
+    if sys.platform == "darwin":
+        return "The user is on macOS, so use Unix-compatible commands (mv, cp, rm, ls, etc.) or Python scripts."
+    elif sys.platform == "win32":
+        return "The user is on Windows, so use Windows-compatible commands (dir, copy, del, etc.) or Python scripts."
+    else:
+        return "The user is on Linux, so use Unix-compatible commands (mv, cp, rm, ls, etc.) or Python scripts."
 
 
 @dataclass
@@ -34,7 +45,7 @@ class AgentStep:
     tool_result: ToolResult = None
 
 
-SYSTEM_PROMPT = """You are an AI assistant that helps users accomplish tasks by executing commands and managing files.
+SYSTEM_PROMPT_TEMPLATE = """You are an AI assistant that helps users accomplish tasks by executing commands and managing files.
 
 You have access to the following tools:
 - run_command: Execute shell commands
@@ -53,13 +64,18 @@ CRITICAL RULES:
 5. If a command fails, try to understand why and fix it
 6. Be careful with destructive operations - list files before deleting
 
-The user is on a Windows system, so use Windows-compatible commands (dir, copy, del, etc.) or Python scripts.
+{os_instructions}
 
 WORKFLOW:
 1. Analyze the task
 2. Call appropriate tools to complete it
 3. Once done, ALWAYS call task_complete with a summary
 """
+
+
+def get_system_prompt() -> str:
+    """Get the system prompt with OS-specific instructions."""
+    return SYSTEM_PROMPT_TEMPLATE.format(os_instructions=get_os_instructions())
 
 
 def run_agent_loop(
@@ -89,7 +105,7 @@ def run_agent_loop(
     
     # Build initial messages
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": get_system_prompt()},
         {"role": "user", "content": f"{task}\n\n{context}" if context else task}
     ]
     
