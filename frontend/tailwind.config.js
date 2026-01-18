@@ -7,59 +7,79 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Primary
-        primary: {
-          blue: '#298FC2',
-          DEFAULT: '#298FC2',
-        },
-        // Neutral
-        neutral: {
-          gray: '#696158',
-          light: '#CCCCCB',
-          DEFAULT: '#696158',
-        },
-        // Secondary
-        secondary: {
-          lightBlue: '#A3D4EC',
-          ember: '#EEB927',
-          navy: '#01405C',
-          purple: '#7D87C2',
-          coral: '#E34154',
-          orange: '#F89848',
-          lime: '#BCC883',
-        },
-        // Link
-        link: {
-          DEFAULT: '#298FC2',
+        // Matrix Theme
+        matrix: {
+          black: '#0a0a0a',
+          darker: '#050505',
+          dark: '#0d0d0d',
+          panel: '#0f0f0f',
+          border: '#1a1a1a',
+          green: '#00ff41',
+          'green-bright': '#39ff14',
+          'green-dim': '#00b336',
+          'green-dark': '#004d1a',
+          'green-glow': '#00ff4180',
+          cyan: '#00ffff',
+          'cyan-dim': '#00b3b3',
+          red: '#ff3131',
+          'red-dim': '#b32222',
+          amber: '#ffb000',
+          'amber-dim': '#b37b00',
         },
       },
       fontFamily: {
-        sans: ["Arial", "Helvetica", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
-      },
-      fontWeight: {
-        regular: '400',
-        bold: '700',
-        black: '900',
+        mono: ['"JetBrains Mono"', '"Fira Code"', '"SF Mono"', 'Monaco', 'Consolas', '"Liberation Mono"', 'monospace'],
+        sans: ['"JetBrains Mono"', 'monospace'],
       },
       fontSize: {
-        body: ['16px', { lineHeight: '1.45' }],
-        h6: ['18px', { lineHeight: '1.2' }],
-        h5: ['20px', { lineHeight: '1.2' }],
-        h4: ['24px', { lineHeight: '1.2' }],
-        h3: ['28px', { lineHeight: '1.2' }],
-        h2: ['32px', { lineHeight: '1.2' }],
-        h1: ['36px', { lineHeight: '1.2' }],
-      },
-      lineHeight: {
-        tight: '1.2',
-        normal: '1.45',
-      },
-      borderRadius: {
-        sm: '4px',
-        md: '8px',
+        'xs': ['11px', { lineHeight: '1.4' }],
+        'sm': ['12px', { lineHeight: '1.5' }],
+        'base': ['13px', { lineHeight: '1.6' }],
+        'lg': ['15px', { lineHeight: '1.5' }],
+        'xl': ['17px', { lineHeight: '1.4' }],
+        '2xl': ['20px', { lineHeight: '1.3' }],
+        '3xl': ['24px', { lineHeight: '1.2' }],
       },
       boxShadow: {
-        card: '0 1px 3px rgba(0,0,0,0.08)',
+        'glow': '0 0 10px rgba(0, 255, 65, 0.3)',
+        'glow-sm': '0 0 5px rgba(0, 255, 65, 0.2)',
+        'glow-lg': '0 0 20px rgba(0, 255, 65, 0.4)',
+        'glow-intense': '0 0 30px rgba(0, 255, 65, 0.6), 0 0 60px rgba(0, 255, 65, 0.3)',
+        'inner-glow': 'inset 0 0 10px rgba(0, 255, 65, 0.1)',
+      },
+      animation: {
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'flicker': 'flicker 0.15s infinite',
+        'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
+        'scan': 'scan 8s linear infinite',
+        'typing': 'typing 0.5s steps(1) infinite',
+        'matrix-fall': 'matrix-fall 20s linear infinite',
+      },
+      keyframes: {
+        flicker: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.8' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { boxShadow: '0 0 5px rgba(0, 255, 65, 0.2)' },
+          '50%': { boxShadow: '0 0 15px rgba(0, 255, 65, 0.4)' },
+        },
+        scan: {
+          '0%': { backgroundPosition: '0 -100vh' },
+          '100%': { backgroundPosition: '0 100vh' },
+        },
+        typing: {
+          '0%, 100%': { borderColor: 'transparent' },
+          '50%': { borderColor: '#00ff41' },
+        },
+        'matrix-fall': {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(100vh)' },
+        },
+      },
+      backgroundImage: {
+        'scanlines': 'repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 255, 65, 0.03) 1px, rgba(0, 255, 65, 0.03) 2px)',
+        'grid': 'linear-gradient(rgba(0, 255, 65, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 65, 0.03) 1px, transparent 1px)',
       },
     },
   },

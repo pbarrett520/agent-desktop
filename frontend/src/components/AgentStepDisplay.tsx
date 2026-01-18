@@ -22,74 +22,82 @@ interface Step {
 
 interface AgentStepDisplayProps {
   step: Step;
-  compact?: boolean; // Compact mode for chat history
+  compact?: boolean;
 }
 
 export default function AgentStepDisplay({ step, compact = false }: AgentStepDisplayProps) {
-  const [isExpanded, setIsExpanded] = useState(!compact); // Collapsed by default in compact mode
+  const [isExpanded, setIsExpanded] = useState(!compact);
 
-  // Skip usage steps in display (they're tracked separately)
   if (step.type === 'usage') {
     return null;
   }
 
-  const getStepIcon = () => {
+  const getStepIndicator = () => {
     switch (step.type) {
       case 'thinking':
-        return '💭';
+        return { icon: '◇', color: 'text-matrix-cyan', label: 'ANALYZE' };
       case 'tool_call':
-        return '🔧';
+        return { icon: '▶', color: 'text-matrix-amber', label: 'EXEC' };
       case 'tool_result':
-        return step.tool_result?.success ? '✅' : '❌';
+        return step.tool_result?.success 
+          ? { icon: '✓', color: 'text-matrix-green', label: 'OK' }
+          : { icon: '✗', color: 'text-matrix-red', label: 'ERR' };
       case 'complete':
-        return '✅';
+        return { icon: '■', color: 'text-matrix-green', label: 'DONE' };
       case 'assistant_message':
-        return '💬';
+        return { icon: '◆', color: 'text-matrix-cyan', label: 'MSG' };
       case 'error':
-        return '❌';
+        return { icon: '!', color: 'text-matrix-red', label: 'FAIL' };
       default:
-        return '•';
+        return { icon: '•', color: 'text-matrix-green-dim', label: 'INFO' };
     }
   };
 
-  const getStepColor = () => {
+  const getBorderColor = () => {
     switch (step.type) {
       case 'thinking':
-        return 'border-l-primary-blue';
+        return 'border-matrix-cyan/50';
       case 'tool_call':
-        return 'border-l-secondary-purple';
+        return 'border-matrix-amber/50';
       case 'tool_result':
-        return step.tool_result?.success ? 'border-l-secondary-lime' : 'border-l-secondary-coral';
+        return step.tool_result?.success ? 'border-matrix-green/50' : 'border-matrix-red/50';
       case 'complete':
-        return 'border-l-secondary-lime';
+        return 'border-matrix-green/50';
       case 'error':
-        return 'border-l-secondary-coral';
+        return 'border-matrix-red/50';
       default:
-        return 'border-l-neutral-light';
+        return 'border-matrix-border';
     }
   };
+
+  const indicator = getStepIndicator();
 
   const renderContent = () => {
     switch (step.type) {
       case 'thinking':
         return (
-          <div className="text-neutral-gray whitespace-pre-wrap">
+          <div className="text-matrix-cyan-dim text-xs whitespace-pre-wrap font-mono">
             {step.content}
           </div>
         );
 
       case 'tool_call':
         return (
-          <div>
+          <div className="message-animate">
             <div 
-              className="flex items-center gap-2 cursor-pointer select-none"
+              className="flex items-center gap-2 cursor-pointer select-none group py-0.5"
               onClick={() => setIsExpanded(!isExpanded)}
             >
-              <span className="text-sm text-neutral-gray">{isExpanded ? '▼' : '▶'}</span>
-              <span className="font-medium text-secondary-navy">{step.tool_name}</span>
+              <span className="text-[10px] text-matrix-green-dim group-hover:text-matrix-green transition-all duration-200">
+                {isExpanded ? '▼' : '▶'}
+              </span>
+              <span className="font-mono text-xs text-matrix-amber flex items-center gap-2">
+                <span className="text-matrix-amber-dim">⚡</span>
+                {step.tool_name}
+              </span>
             </div>
             {isExpanded && step.tool_args && (
-              <pre className="mt-2 p-3 bg-neutral-light/30 rounded-md text-sm overflow-x-auto text-neutral-gray max-w-full break-words whitespace-pre-wrap">
+              <pre className="mt-2 p-3 bg-matrix-black border border-matrix-amber/20 rounded text-[10px] overflow-x-auto text-matrix-green-dim font-mono max-w-full break-words whitespace-pre-wrap panel-depth">
                 {JSON.stringify(step.tool_args, null, 2)}
               </pre>
             )}
@@ -99,19 +107,24 @@ export default function AgentStepDisplay({ step, compact = false }: AgentStepDis
       case 'tool_result':
         const success = step.tool_result?.success ?? true;
         return (
-          <div>
+          <div className="message-animate">
             <div 
-              className="flex items-center gap-2 cursor-pointer select-none"
+              className="flex items-center gap-2 cursor-pointer select-none group py-0.5"
               onClick={() => setIsExpanded(!isExpanded)}
             >
-              <span className="text-sm text-neutral-gray">{isExpanded ? '▼' : '▶'}</span>
-              <span className={`font-medium ${success ? 'text-secondary-navy' : 'text-secondary-coral'}`}>
-                Result: {step.tool_name}
+              <span className="text-[10px] text-matrix-green-dim group-hover:text-matrix-green transition-all duration-200">
+                {isExpanded ? '▼' : '▶'}
+              </span>
+              <span className={`font-mono text-xs flex items-center gap-2 ${success ? 'text-matrix-green' : 'text-matrix-red'}`}>
+                {success ? <span className="text-matrix-green">✓</span> : <span className="text-matrix-red">✗</span>}
+                {step.tool_name || 'OUTPUT'}
               </span>
             </div>
             {isExpanded && (
-              <pre className={`mt-2 p-3 rounded-md text-sm overflow-x-auto whitespace-pre-wrap break-words max-w-full ${
-                success ? 'bg-secondary-lime/10 text-neutral-gray' : 'bg-secondary-coral/10 text-secondary-coral'
+              <pre className={`mt-2 p-3 rounded text-[10px] overflow-x-auto whitespace-pre-wrap break-words max-w-full font-mono panel-depth ${
+                success 
+                  ? 'bg-matrix-green/5 border border-matrix-green/20 text-matrix-green-dim' 
+                  : 'bg-matrix-red/5 border border-matrix-red/20 text-matrix-red'
               }`}>
                 {step.content || 'No output'}
               </pre>
@@ -121,9 +134,12 @@ export default function AgentStepDisplay({ step, compact = false }: AgentStepDis
 
       case 'complete':
         return (
-          <div className="bg-secondary-lime/10 p-3 rounded-md">
-            <span className="font-bold text-secondary-navy">Task Complete</span>
-            <div className="mt-2 text-neutral-gray whitespace-pre-wrap">
+          <div className="bg-matrix-green/10 border border-matrix-green/30 p-3 rounded shadow-glow-sm message-animate">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-matrix-green text-glow animate-pulse">■</span>
+              <span className="font-mono text-xs text-matrix-green uppercase tracking-wider brand-text">TASK_COMPLETE</span>
+            </div>
+            <div className="text-matrix-green-dim text-xs whitespace-pre-wrap font-mono">
               {step.content}
             </div>
           </div>
@@ -131,24 +147,41 @@ export default function AgentStepDisplay({ step, compact = false }: AgentStepDis
 
       case 'error':
         return (
-          <div className="bg-secondary-coral/10 p-3 rounded-md overflow-hidden">
-            <span className="font-bold text-secondary-coral">Error</span>
-            <div className="mt-2 text-secondary-coral whitespace-pre-wrap break-words">
+          <div className="bg-matrix-red/10 border border-matrix-red/30 p-3 rounded overflow-hidden message-animate">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-matrix-red animate-pulse">!</span>
+              <span className="font-mono text-xs text-matrix-red uppercase tracking-wider">SYSTEM_ERROR</span>
+            </div>
+            <div className="text-matrix-red text-xs whitespace-pre-wrap break-words font-mono">
               {step.content}
             </div>
           </div>
         );
 
       default:
-        return <div className="text-neutral-gray">{step.content}</div>;
+        return <div className="text-matrix-green-dim text-xs font-mono">{step.content}</div>;
     }
   };
 
   return (
-    <div className={`border-l-4 ${getStepColor()} ${compact ? 'pl-2 py-1' : 'pl-4 py-2'}`}>
+    <div className={`border-l-2 ${getBorderColor()} ${compact ? 'pl-2 py-1' : 'pl-3 py-2'}`}>
       <div className="flex items-start gap-2">
-        <span className={`${compact ? 'text-sm' : 'text-lg'} flex-shrink-0`}>{getStepIcon()}</span>
-        <div className={`flex-1 min-w-0 ${compact ? 'text-sm' : ''}`}>
+        {/* Step indicator */}
+        <div className={`flex-shrink-0 ${compact ? 'text-xs' : 'text-sm'}`}>
+          <span className={`${indicator.color} font-mono`}>{indicator.icon}</span>
+        </div>
+        
+        {/* Label (only in non-compact mode) */}
+        {!compact && (
+          <div className="flex-shrink-0 w-12">
+            <span className={`text-[9px] font-mono uppercase tracking-wide ${indicator.color}`}>
+              {indicator.label}
+            </span>
+          </div>
+        )}
+        
+        {/* Content */}
+        <div className={`flex-1 min-w-0 ${compact ? 'text-xs' : ''}`}>
           {renderContent()}
         </div>
       </div>

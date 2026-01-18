@@ -23,7 +23,7 @@ interface SidebarProps {
 
 export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConnection, onCollapse }: SidebarProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(true); // Start collapsed
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [formData, setFormData] = useState<Config>({
@@ -91,7 +91,6 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
     config.endpoint && 
     config.model;
 
-  // Auto-expand if not configured
   useEffect(() => {
     if (!isConfigured) {
       setIsCollapsed(false);
@@ -100,9 +99,8 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
 
   const getProviderName = (endpoint: string): string => {
     if (endpoint.includes('api.openai.com')) return 'OpenAI';
-    if (endpoint.includes('localhost:1234')) return 'LM Studio';
+    if (endpoint.includes('localhost:1234')) return 'LM_Studio';
     if (endpoint.includes('openrouter.ai')) return 'OpenRouter';
-    // Extract domain for custom endpoints
     try {
       const url = new URL(endpoint);
       return url.hostname;
@@ -112,15 +110,26 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
   };
 
   return (
-    <aside className="w-52 bg-white border-r border-neutral-light h-full overflow-y-auto flex flex-col">
-      {/* Header */}
-      <div className="p-3 border-b border-neutral-light">
+    <aside className="w-60 bg-matrix-darker border-r border-matrix-green/10 h-full overflow-y-auto flex flex-col panel-depth relative">
+      {/* Subtle grid pattern overlay */}
+      <div className="absolute inset-0 opacity-5 pointer-events-none" style={{
+        backgroundImage: 'linear-gradient(rgba(0, 255, 65, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 65, 0.1) 1px, transparent 1px)',
+        backgroundSize: '20px 20px'
+      }} />
+      
+      {/* Header with ASCII-style branding */}
+      <div className="p-4 border-b border-matrix-green/20 relative z-10">
         <div className="flex items-center justify-between">
-          <h1 className="text-sm font-bold text-secondary-navy">Agent Desktop</h1>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-matrix-green rounded-full animate-pulse shadow-glow" />
+            <h1 className="text-sm font-bold text-matrix-green text-glow-intense tracking-widest brand-text">
+              AGENT
+            </h1>
+          </div>
           {onCollapse && (
             <button
               onClick={onCollapse}
-              className="p-1 hover:bg-gray-100 rounded text-neutral-gray hover:text-secondary-navy"
+              className="p-1.5 hover:bg-matrix-green/10 rounded text-matrix-green-dim hover:text-matrix-green transition-all hover:shadow-glow-sm"
               title="Collapse sidebar"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -129,76 +138,80 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
             </button>
           )}
         </div>
+        <div className="text-[10px] text-matrix-green-dark mt-2 font-mono flex items-center gap-2">
+          <span className="text-matrix-green-dim">v1.0.0</span>
+          <span className="text-matrix-border">│</span>
+          <span className="text-matrix-cyan-dim text-flicker">NEURAL_INTERFACE</span>
+        </div>
       </div>
 
-      {/* Configuration Section - Collapsible */}
-      <div className="border-b border-neutral-light">
+      {/* Configuration Section */}
+      <div className="border-b border-matrix-border">
         <button
           onClick={() => !isEditing && setIsCollapsed(!isCollapsed)}
-          className={`w-full p-3 flex items-center justify-between hover:bg-gray-50 transition-colors ${isEditing ? 'cursor-default' : 'cursor-pointer'}`}
+          className={`w-full p-3 flex items-center justify-between hover:bg-matrix-green/5 transition-colors ${isEditing ? 'cursor-default' : 'cursor-pointer'}`}
         >
           <div className="flex items-center gap-2">
-            <svg 
-              className={`w-4 h-4 text-neutral-gray transition-transform ${isCollapsed ? '' : 'rotate-90'}`} 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-            <span className="text-sm font-semibold text-neutral-gray">LLM Provider</span>
+            <span className={`text-matrix-green-dim text-xs transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>
+              {isCollapsed ? '▶' : '▼'}
+            </span>
+            <span className="text-xs font-medium text-matrix-green-dim uppercase tracking-wide">
+              LLM_CONFIG
+            </span>
           </div>
           {isConfigured && !isEditing && (
-            <span className="flex items-center gap-1 text-xs text-secondary-lime">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary-lime"></span>
-              Connected
+            <span className="flex items-center gap-1.5">
+              <span className="status-online"></span>
+              <span className="text-[10px] text-matrix-green uppercase">LINKED</span>
             </span>
           )}
         </button>
 
-        {/* Collapsible content */}
         {!isCollapsed && (
-          <div className="px-4 pb-4">
+          <div className="px-3 pb-4">
             {isConfigured && !isEditing ? (
-              <div className="space-y-2 text-sm">
-                <div className="text-neutral-gray truncate">
-                  <span className="font-medium">Provider:</span>{' '}
-                  <span className="text-xs">{getProviderName(config.endpoint)}</span>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-matrix-green-dim">
+                  <span className="text-matrix-green">▸</span>
+                  <span className="uppercase">Provider:</span>
+                  <span className="text-matrix-green">{getProviderName(config.endpoint)}</span>
                 </div>
-                <div className="text-neutral-gray">
-                  <span className="font-medium">Model:</span> {config.model}
+                <div className="flex items-center gap-2 text-matrix-green-dim">
+                  <span className="text-matrix-green">▸</span>
+                  <span className="uppercase">Model:</span>
+                  <span className="text-matrix-green truncate">{config.model}</span>
                 </div>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsEditing(true);
                   }}
-                  className="text-xs text-primary-blue hover:underline mt-2"
+                  className="text-[10px] text-matrix-green-dim hover:text-matrix-green mt-2 uppercase tracking-wide"
                 >
-                  Edit configuration
+                  [MODIFY_CONFIG]
                 </button>
               </div>
             ) : (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Provider Preset
+                  <label className="block text-[10px] font-medium text-matrix-green-dim mb-1 uppercase tracking-wide">
+                    Provider_Preset
                   </label>
                   <select
                     value={getPresetFromEndpoint(formData.endpoint)}
                     onChange={handlePresetChange}
-                    className="input-field text-sm"
+                    className="input-field text-xs"
                   >
                     <option value="openai">OpenAI</option>
-                    <option value="lmstudio">LM Studio (Local)</option>
+                    <option value="lmstudio">LM_Studio [LOCAL]</option>
                     <option value="openrouter">OpenRouter</option>
-                    <option value="custom">Custom Endpoint</option>
+                    <option value="custom">Custom_Endpoint</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Endpoint URL
+                  <label className="block text-[10px] font-medium text-matrix-green-dim mb-1 uppercase tracking-wide">
+                    Endpoint_URL
                   </label>
                   <input
                     type="text"
@@ -206,44 +219,44 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
                     value={formData.endpoint}
                     onChange={handleChange}
                     placeholder="https://api.openai.com/v1"
-                    className="input-field text-sm"
+                    className="input-field text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    API Key
+                  <label className="block text-[10px] font-medium text-matrix-green-dim mb-1 uppercase tracking-wide">
+                    API_Key
                   </label>
                   <input
                     type="password"
                     name="api_key"
                     value={formData.api_key}
                     onChange={handleChange}
-                    placeholder="Enter your API key"
-                    className="input-field text-sm"
+                    placeholder="••••••••••••••••"
+                    className="input-field text-xs"
                   />
                   {getPresetFromEndpoint(formData.endpoint) === 'lmstudio' && (
-                    <p className="text-xs text-neutral-gray mt-1">Optional for LM Studio</p>
+                    <p className="text-[10px] text-matrix-green-dark mt-1">[OPTIONAL FOR LOCAL]</p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Model
+                  <label className="block text-[10px] font-medium text-matrix-green-dim mb-1 uppercase tracking-wide">
+                    Model_ID
                   </label>
                   <input
                     type="text"
                     name="model"
                     value={formData.model}
                     onChange={handleChange}
-                    placeholder="e.g., gpt-4o, deepseek-chat"
-                    className="input-field text-sm"
+                    placeholder="gpt-4o / deepseek-chat"
+                    className="input-field text-xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Timeout (seconds)
+                  <label className="block text-[10px] font-medium text-matrix-green-dim mb-1 uppercase tracking-wide">
+                    Timeout_Sec
                   </label>
                   <input
                     type="number"
@@ -252,33 +265,45 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
                     onChange={handleChange}
                     min={10}
                     max={300}
-                    className="input-field text-sm"
+                    className="input-field text-xs"
                   />
                 </div>
 
                 {testResult && (
-                  <div className={`p-2 rounded-md text-xs ${
+                  <div className={`p-2.5 rounded text-[10px] font-mono message-animate ${
                     testResult.success 
-                      ? 'bg-secondary-lime/20 text-secondary-navy' 
-                      : 'bg-secondary-coral/20 text-secondary-coral'
+                      ? 'bg-matrix-green/10 border border-matrix-green/30 text-matrix-green shadow-glow-sm' 
+                      : 'bg-matrix-red/10 border border-matrix-red/30 text-matrix-red'
                   }`}>
-                    {testResult.message}
+                    <span className="flex items-center gap-2">
+                      {testResult.success ? (
+                        <span className="text-matrix-green text-glow">✓</span>
+                      ) : (
+                        <span className="text-matrix-red">✗</span>
+                      )}
+                      {testResult.message}
+                    </span>
                   </div>
                 )}
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-3">
                   <button
                     onClick={handleTest}
                     disabled={isTesting || !formData.endpoint || !formData.model}
-                    className="btn-secondary text-xs flex-1 py-1.5"
+                    className="btn-secondary text-[10px] flex-1 py-2 uppercase tracking-wider glitch-hover"
                   >
-                    {isTesting ? 'Testing...' : 'Test'}
+                    {isTesting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-1.5 h-1.5 bg-current rounded-full animate-pulse" />
+                        TESTING
+                      </span>
+                    ) : 'TEST'}
                   </button>
                   <button
                     onClick={handleSave}
-                    className="btn-primary text-xs flex-1 py-1.5"
+                    className="btn-primary text-[10px] flex-1 py-2 uppercase tracking-wider glitch-hover"
                   >
-                    Save
+                    SAVE
                   </button>
                 </div>
 
@@ -289,9 +314,9 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
                       setFormData(config!);
                       setTestResult(null);
                     }}
-                    className="text-xs text-neutral-gray hover:underline w-full text-center"
+                    className="text-[10px] text-matrix-green-dim hover:text-matrix-green w-full text-center uppercase tracking-wider mt-2 transition-colors"
                   >
-                    Cancel
+                    [CANCEL]
                   </button>
                 )}
               </div>
@@ -302,27 +327,48 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
 
       {/* Token Usage Section */}
       {tokenUsage.total_tokens > 0 && (
-        <div className="p-4 border-b border-neutral-light">
-          <h2 className="text-xs font-semibold text-neutral-gray mb-2">Token Usage</h2>
-          <div className="space-y-1 text-xs font-mono">
-            <div className="flex justify-between">
-              <span className="text-neutral-gray">Prompt:</span>
-              <span className="text-primary-blue">{tokenUsage.prompt_tokens.toLocaleString()}</span>
+        <div className="p-4 border-b border-matrix-border relative z-10">
+          <h2 className="text-[10px] font-medium text-matrix-green-dim mb-3 uppercase tracking-wider flex items-center gap-2">
+            <span className="text-matrix-amber">◇</span>
+            Token_Usage
+          </h2>
+          <div className="space-y-2 text-[10px] font-mono">
+            <div className="flex justify-between items-center">
+              <span className="text-matrix-green-dim flex items-center gap-1.5">
+                <span className="text-matrix-green">↑</span> INPUT
+              </span>
+              <span className="text-matrix-green">{tokenUsage.prompt_tokens.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-gray">Completion:</span>
-              <span className="text-secondary-lime">{tokenUsage.completion_tokens.toLocaleString()}</span>
+            <div className="flex justify-between items-center">
+              <span className="text-matrix-green-dim flex items-center gap-1.5">
+                <span className="text-matrix-cyan">↓</span> OUTPUT
+              </span>
+              <span className="text-matrix-cyan">{tokenUsage.completion_tokens.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between pt-1 border-t border-neutral-light">
-              <span className="font-bold text-neutral-gray">Total:</span>
-              <span className="font-bold text-secondary-navy">{tokenUsage.total_tokens.toLocaleString()}</span>
+            <div className="flex justify-between items-center pt-2 border-t border-matrix-border">
+              <span className="text-matrix-green-dim">TOTAL</span>
+              <span className="text-matrix-green text-glow font-bold text-xs">{tokenUsage.total_tokens.toLocaleString()}</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Spacer */}
-      <div className="flex-1"></div>
+      {/* System Status */}
+      <div className="p-4 mt-auto border-t border-matrix-border bg-matrix-darker/50 relative z-10">
+        <div className="text-[9px] text-matrix-green-dark font-mono space-y-1">
+          <div className="flex items-center justify-between">
+            <span>SYS_STATUS</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-matrix-green rounded-full animate-pulse" />
+              <span className="text-matrix-green">OPERATIONAL</span>
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>NEURAL_NET</span>
+            <span className="text-matrix-cyan text-flicker">ACTIVE</span>
+          </div>
+        </div>
+      </div>
     </aside>
   );
 }

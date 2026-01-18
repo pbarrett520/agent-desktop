@@ -51,13 +51,12 @@ interface SessionInfo {
   history_count: number;
 }
 
-// Message displayed in chat (derived from conversation + steps)
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
-  steps?: Step[]; // Tool calls/results associated with this response
+  steps?: Step[];
 }
 
 function App() {
@@ -71,17 +70,14 @@ function App() {
     total_tokens: 0,
   });
 
-  // Conversation state
   const [conversations, setConversations] = useState<conversation.Summary[]>([]);
   const [activeConversation, setActiveConversation] = useState<conversation.Conversation | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [currentSteps, setCurrentSteps] = useState<Step[]>([]); // Steps for current turn
+  const [currentSteps, setCurrentSteps] = useState<Step[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
-  // Use ref to track steps for event handlers (avoids stale closure issues)
   const currentStepsRef = useRef<Step[]>([]);
 
-  // Load initial state
   useEffect(() => {
     const loadInitialState = async () => {
       try {
@@ -92,10 +88,8 @@ function App() {
         const info = await GetSessionInfo();
         setSessionInfo(info as SessionInfo);
         
-        // Load conversations list
         await refreshConversations();
         
-        // Check if there's an active conversation
         const active = await GetActiveConversation();
         if (active && active.id) {
           setActiveConversation(active);
@@ -108,7 +102,6 @@ function App() {
     loadInitialState();
   }, []);
 
-  // Refresh conversations list
   const refreshConversations = async () => {
     try {
       const list = await ListConversations();
@@ -118,7 +111,6 @@ function App() {
     }
   };
 
-  // Convert conversation messages to chat messages
   const updateChatMessagesFromConversation = (conv: conversation.Conversation) => {
     if (!conv.messages) {
       setChatMessages([]);
@@ -128,17 +120,14 @@ function App() {
     const messages: ChatMessage[] = [];
     const rawMessages = conv.messages;
     
-    // Track steps for current turn (between user messages)
     let currentSteps: Step[] = [];
     let stepNumber = 0;
     
     for (let i = 0; i < rawMessages.length; i++) {
       const msg = rawMessages[i];
       
-      // Skip system messages
       if (msg.role === 'system') continue;
       
-      // Add user messages - this starts a new turn, so reset steps
       if (msg.role === 'user' && msg.content && msg.content.trim()) {
         currentSteps = [];
         stepNumber = 0;
@@ -151,7 +140,6 @@ function App() {
         continue;
       }
       
-      // For assistant messages with tool_calls, create tool_call steps
       if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
         for (const toolCall of msg.tool_calls) {
           stepNumber++;
@@ -172,12 +160,10 @@ function App() {
         continue;
       }
       
-      // For tool messages, create tool_result steps
       if (msg.role === 'tool' && msg.content) {
         stepNumber++;
         const isTaskComplete = msg.content.includes('Task completed!');
         
-        // Add as a tool result step
         currentSteps.push({
           step_number: stepNumber,
           type: isTaskComplete ? 'complete' : 'tool_result',
@@ -189,9 +175,7 @@ function App() {
           },
         });
         
-        // If this is a task_complete result, create the assistant message with all steps
         if (isTaskComplete) {
-          // Clean up the content - remove the emoji prefix if present
           let content = msg.content;
           const taskCompleteIndex = content.indexOf('Task completed!');
           if (taskCompleteIndex > 0) {
@@ -210,7 +194,6 @@ function App() {
         continue;
       }
       
-      // For assistant messages with actual content (not just tool calls)
       if (msg.role === 'assistant' && msg.content && msg.content.trim()) {
         messages.push({
           id: `msg-${messages.length}`,
@@ -224,12 +207,10 @@ function App() {
     setChatMessages(messages);
   };
 
-  // Keep ref in sync with state
   useEffect(() => {
     currentStepsRef.current = currentSteps;
   }, [currentSteps]);
 
-  // Subscribe to agent events (only once on mount)
   useEffect(() => {
     const unsubscribeStep = EventsOn('agent:step', (step: Step) => {
       if (step.type === 'usage' && step.usage) {
@@ -245,7 +226,6 @@ function App() {
 
     const unsubscribeComplete = EventsOn('agent:complete', (content: string) => {
       setIsRunning(false);
-      // Add assistant message to chat with current steps from ref
       const steps = currentStepsRef.current;
       setChatMessages(prev => [...prev, {
         id: `msg-${Date.now()}`,
@@ -255,15 +235,12 @@ function App() {
         steps: steps.length > 0 ? [...steps] : undefined,
       }]);
       setCurrentSteps([]);
-      // Refresh conversations (title may have been generated)
       refreshConversations();
-      // Refresh session info
       GetSessionInfo().then(info => setSessionInfo(info as SessionInfo));
     });
 
     const unsubscribeMessage = EventsOn('agent:message', (content: string) => {
       setIsRunning(false);
-      // Conversational response (not task completion)
       const steps = currentStepsRef.current;
       setChatMessages(prev => [...prev, {
         id: `msg-${Date.now()}`,
@@ -273,13 +250,11 @@ function App() {
         steps: steps.length > 0 ? [...steps] : undefined,
       }]);
       setCurrentSteps([]);
-      // Refresh conversations (title may have been generated)
       refreshConversations();
     });
 
     const unsubscribeError = EventsOn('agent:error', (errorMsg: string) => {
       setIsRunning(false);
-      // Show error as a system message
       setChatMessages(prev => [...prev, {
         id: `msg-${Date.now()}`,
         role: 'system',
@@ -321,7 +296,6 @@ function App() {
     }
   }, []);
 
-  // Conversation management
   const handleNewConversation = useCallback(async () => {
     try {
       const conv = await NewConversation();
@@ -351,7 +325,6 @@ function App() {
       await DeleteConversation(id);
       await refreshConversations();
       
-      // If we deleted the active conversation, clear it
       if (activeConversation?.id === id) {
         setActiveConversation(null);
         setChatMessages([]);
@@ -366,9 +339,7 @@ function App() {
       await RenameConversation(id, title);
       await refreshConversations();
       
-      // Update active conversation if it's the one we renamed
       if (activeConversation?.id === id) {
-        // Reload to get the updated conversation object
         const updated = await LoadConversation(id);
         setActiveConversation(updated);
       }
@@ -377,9 +348,7 @@ function App() {
     }
   }, [activeConversation]);
 
-  // Send message in chat
   const handleSendMessage = useCallback(async (message: string, context: string) => {
-    // Add user message to chat immediately for responsiveness
     setChatMessages(prev => [...prev, {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -415,15 +384,20 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen flex bg-gray-50 overflow-hidden">
+    <div className="h-screen flex bg-matrix-black overflow-hidden relative">
+      {/* CRT Effects Overlays */}
+      <div className="crt-overlay" />
+      <div className="noise-overlay" />
+      <div className="vignette" />
+      
       {/* Collapsible sidebar container */}
       <div className={`flex transition-all duration-300 ${sidebarCollapsed ? 'w-12' : ''}`}>
         {sidebarCollapsed ? (
-          /* Collapsed state - just show expand button */
-          <div className="w-12 bg-white border-r border-neutral-light flex flex-col items-center py-3 gap-3">
+          /* Collapsed state */
+          <div className="w-12 bg-matrix-darker border-r border-matrix-border flex flex-col items-center py-3 gap-3">
             <button
               onClick={() => setSidebarCollapsed(false)}
-              className="p-2 hover:bg-gray-100 rounded-lg text-neutral-gray hover:text-secondary-navy"
+              className="p-2 hover:bg-matrix-green/10 rounded text-matrix-green-dim hover:text-matrix-green transition-colors"
               title="Expand sidebar"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -432,21 +406,20 @@ function App() {
             </button>
             <button
               onClick={handleNewConversation}
-              className="p-2 hover:bg-gray-100 rounded-lg text-primary-blue"
-              title="New Chat"
+              className="p-2 hover:bg-matrix-green/10 rounded text-matrix-green transition-colors"
+              title="New Session"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
             {isConfigured && (
-              <div className="w-2 h-2 rounded-full bg-secondary-lime" title="Connected" />
+              <div className="status-online" title="Connected" />
             )}
           </div>
         ) : (
-          /* Expanded state - show both sidebars */
+          /* Expanded state */
           <>
-            {/* Config sidebar */}
             <Sidebar
               config={config}
               onConfigChange={handleConfigChange}
@@ -455,7 +428,6 @@ function App() {
               onCollapse={() => setSidebarCollapsed(true)}
             />
             
-            {/* Conversation list */}
             <ConversationSidebar
               conversations={conversations}
               activeConversationId={activeConversation?.id || null}
