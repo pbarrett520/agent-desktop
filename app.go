@@ -94,6 +94,8 @@ func (a *App) SaveConfig(cfg *config.Config) error {
 		client, err := llm.NewClient(cfg)
 		if err == nil {
 			a.client = client
+			// Reinitialize conversation manager with the new client
+			a.initConversationManager()
 		}
 	}
 

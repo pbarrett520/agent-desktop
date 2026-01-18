@@ -96,10 +96,10 @@ export default function ChatInterface({
         <div className="text-center max-w-md">
           <div className="text-6xl mb-4">⚙️</div>
           <h2 className="text-h4 font-bold text-secondary-navy mb-2">
-            Configure Azure OpenAI
+            Configure LLM Provider
           </h2>
           <p className="text-neutral-gray">
-            Please configure your Azure OpenAI credentials in the sidebar to get started.
+            Please configure your credentials in the sidebar to get started.
           </p>
         </div>
       </div>

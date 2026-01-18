@@ -162,6 +162,11 @@ func (m *Manager) GenerateTitle(ctx context.Context) error {
 		return errors.New("no active conversation")
 	}
 
+	// Skip if no LLM client configured
+	if m.client == nil {
+		return nil
+	}
+
 	// Skip if title is already set (not default)
 	if m.active.Title != "" && m.active.Title != "New Conversation" {
 		return nil
