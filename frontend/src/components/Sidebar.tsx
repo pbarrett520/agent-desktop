@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 
 interface Config {
-  openai_subscription_key: string;
-  openai_endpoint: string;
-  openai_deployment: string;
-  openai_model_name: string;
+  api_key: string;
+  endpoint: string;
+  model: string;
   execution_timeout: number;
 }
 
@@ -28,10 +27,9 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [formData, setFormData] = useState<Config>({
-    openai_subscription_key: '',
-    openai_endpoint: '',
-    openai_deployment: '',
-    openai_model_name: '',
+    api_key: '',
+    endpoint: 'https://api.openai.com/v1',
+    model: '',
     execution_timeout: 60,
   });
 
@@ -41,12 +39,33 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
     }
   }, [config]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     setFormData(prev => ({
       ...prev,
       [name]: type === 'number' ? parseInt(value) || 0 : value,
     }));
+  };
+
+  const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const preset = e.target.value;
+    const presets: Record<string, string> = {
+      'openai': 'https://api.openai.com/v1',
+      'lmstudio': 'http://localhost:1234/v1',
+      'openrouter': 'https://openrouter.ai/api/v1',
+      'custom': formData.endpoint,
+    };
+    setFormData(prev => ({
+      ...prev,
+      endpoint: presets[preset] || prev.endpoint,
+    }));
+  };
+
+  const getPresetFromEndpoint = (endpoint: string): string => {
+    if (endpoint.includes('api.openai.com')) return 'openai';
+    if (endpoint.includes('localhost:1234')) return 'lmstudio';
+    if (endpoint.includes('openrouter.ai')) return 'openrouter';
+    return 'custom';
   };
 
   const handleSave = () => {
@@ -68,10 +87,9 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
   };
 
   const isConfigured = config && 
-    config.openai_subscription_key && 
-    config.openai_endpoint && 
-    config.openai_deployment && 
-    config.openai_model_name;
+    config.api_key && 
+    config.endpoint && 
+    config.model;
 
   // Auto-expand if not configured
   useEffect(() => {
@@ -79,6 +97,19 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
       setIsCollapsed(false);
     }
   }, [isConfigured]);
+
+  const getProviderName = (endpoint: string): string => {
+    if (endpoint.includes('api.openai.com')) return 'OpenAI';
+    if (endpoint.includes('localhost:1234')) return 'LM Studio';
+    if (endpoint.includes('openrouter.ai')) return 'OpenRouter';
+    // Extract domain for custom endpoints
+    try {
+      const url = new URL(endpoint);
+      return url.hostname;
+    } catch {
+      return 'Custom';
+    }
+  };
 
   return (
     <aside className="w-52 bg-white border-r border-neutral-light h-full overflow-y-auto flex flex-col">
@@ -131,11 +162,11 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
             {isConfigured && !isEditing ? (
               <div className="space-y-2 text-sm">
                 <div className="text-neutral-gray truncate">
-                  <span className="font-medium">Endpoint:</span>{' '}
-                  <span className="text-xs">{config.openai_endpoint.replace('https://', '').split('.')[0]}</span>
+                  <span className="font-medium">Provider:</span>{' '}
+                  <span className="text-xs">{getProviderName(config.endpoint)}</span>
                 </div>
                 <div className="text-neutral-gray">
-                  <span className="font-medium">Model:</span> {config.openai_model_name}
+                  <span className="font-medium">Model:</span> {config.model}
                 </div>
                 <button
                   onClick={(e) => {
@@ -151,14 +182,30 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Endpoint
+                    Provider Preset
+                  </label>
+                  <select
+                    value={getPresetFromEndpoint(formData.endpoint)}
+                    onChange={handlePresetChange}
+                    className="input-field text-sm"
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="lmstudio">LM Studio (Local)</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="custom">Custom Endpoint</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-gray mb-1">
+                    Endpoint URL
                   </label>
                   <input
                     type="text"
-                    name="openai_endpoint"
-                    value={formData.openai_endpoint}
+                    name="endpoint"
+                    value={formData.endpoint}
                     onChange={handleChange}
-                    placeholder="https://your-resource.openai.azure.com"
+                    placeholder="https://api.openai.com/v1"
                     className="input-field text-sm"
                   />
                 </div>
@@ -169,38 +216,27 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
                   </label>
                   <input
                     type="password"
-                    name="openai_subscription_key"
-                    value={formData.openai_subscription_key}
+                    name="api_key"
+                    value={formData.api_key}
                     onChange={handleChange}
                     placeholder="Enter your API key"
                     className="input-field text-sm"
                   />
+                  {getPresetFromEndpoint(formData.endpoint) === 'lmstudio' && (
+                    <p className="text-xs text-neutral-gray mt-1">Optional for LM Studio</p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Deployment Name
+                    Model
                   </label>
                   <input
                     type="text"
-                    name="openai_deployment"
-                    value={formData.openai_deployment}
+                    name="model"
+                    value={formData.model}
                     onChange={handleChange}
-                    placeholder="e.g., gpt-4o"
-                    className="input-field text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-neutral-gray mb-1">
-                    Model Name
-                  </label>
-                  <input
-                    type="text"
-                    name="openai_model_name"
-                    value={formData.openai_model_name}
-                    onChange={handleChange}
-                    placeholder="e.g., gpt-4o"
+                    placeholder="e.g., gpt-4o, deepseek-chat"
                     className="input-field text-sm"
                   />
                 </div>
@@ -233,7 +269,7 @@ export default function Sidebar({ config, onConfigChange, tokenUsage, onTestConn
                 <div className="flex gap-2 pt-2">
                   <button
                     onClick={handleTest}
-                    disabled={isTesting || !formData.openai_endpoint || !formData.openai_subscription_key}
+                    disabled={isTesting || !formData.endpoint || !formData.model}
                     className="btn-secondary text-xs flex-1 py-1.5"
                   >
                     {isTesting ? 'Testing...' : 'Test'}

@@ -20,7 +20,7 @@ func TestTestConnection_InvalidConfig(t *testing.T) {
 
 func TestTestConnection_MissingFields(t *testing.T) {
 	cfg := &config.Config{
-		OpenAISubscriptionKey: "key",
+		APIKey: "key",
 		// Missing other fields
 	}
 
@@ -36,10 +36,9 @@ func TestTestConnection_MissingFields(t *testing.T) {
 
 func TestTestConnection_InvalidEndpoint(t *testing.T) {
 	cfg := &config.Config{
-		OpenAISubscriptionKey: "fake-key",
-		OpenAIEndpoint:        "https://invalid-endpoint-that-does-not-exist-12345.openai.azure.com",
-		OpenAIDeployment:      "gpt-4o",
-		OpenAIModelName:       "gpt-4o",
+		APIKey:   "fake-key",
+		Endpoint: "https://invalid-endpoint-that-does-not-exist-12345.example.com/v1",
+		Model:    "gpt-4o",
 	}
 
 	success, msg := TestConnection(cfg)
@@ -51,5 +50,5 @@ func TestTestConnection_InvalidEndpoint(t *testing.T) {
 	}
 }
 
-// Note: Testing successful connection requires a real Azure endpoint
+// Note: Testing successful connection requires a real API endpoint
 // This should be done via integration tests with proper credentials

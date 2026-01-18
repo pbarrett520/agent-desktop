@@ -1,15 +1,24 @@
 # Agent Desktop
 
-A desktop AI agent application built with Go (Wails) and React/TypeScript. The agent can execute shell commands, manage files, and complete tasks autonomously using Azure OpenAI.
+A desktop AI agent application built with Go (Wails) and React/TypeScript. The agent can execute shell commands, manage files, and complete tasks autonomously using any OpenAI-compatible LLM.
 
 ## Features
 
 - **Agent Mode**: AI assistant that can execute commands and manage files
-- **Azure OpenAI Integration**: Connect to your Azure OpenAI deployment
+- **Multiple LLM Providers**: Works with OpenAI, LM Studio, OpenRouter, and any OpenAI-compatible API
 - **Safe Command Execution**: Built-in blocklist prevents dangerous commands
 - **Real-time Progress**: Watch the agent work step-by-step
-- **Token Usage Tracking**: Monitor API usage and estimated costs
+- **Token Usage Tracking**: Monitor API usage
 - **Cross-platform**: Runs on Windows, macOS, and Linux
+
+## Supported LLM Providers
+
+| Provider | Endpoint | Notes |
+|----------|----------|-------|
+| OpenAI | `https://api.openai.com/v1` | GPT-4o, GPT-4, etc. |
+| LM Studio | `http://localhost:1234/v1` | Local models |
+| OpenRouter | `https://openrouter.ai/api/v1` | Multiple providers |
+| Custom | Any URL | Any OpenAI-compatible API |
 
 ## Prerequisites
 
@@ -59,21 +68,21 @@ The built application will be at:
 
 ### Configuration
 
-On first run, configure your Azure OpenAI credentials in the sidebar:
+On first run, configure your LLM provider in the sidebar:
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| Endpoint | Azure OpenAI resource URL | `https://your-resource.openai.azure.com` |
-| API Key | Your Azure OpenAI subscription key | `abc123...` |
-| Deployment Name | Your model deployment name | `gpt-4o` |
-| Model Name | The underlying model | `gpt-4o` |
+| Provider Preset | Quick select for common providers | OpenAI, LM Studio, OpenRouter, Custom |
+| Endpoint URL | API base URL | `https://api.openai.com/v1` |
+| API Key | Your API key | `sk-...` |
+| Model | Model name | `gpt-4o`, `deepseek-chat` |
 | Timeout | Execution timeout in seconds | `60` |
 
 Configuration is saved to `~/.agent_desktop/config.json`.
 
 ## Usage
 
-1. **Configure Azure OpenAI** - Enter your credentials in the sidebar and click "Save"
+1. **Configure LLM** - Select a provider preset or enter a custom endpoint, then add your API key and model
 2. **Test Connection** - Click "Test" to verify your configuration
 3. **Enter a Task** - Type what you want the agent to do
 4. **Run Task** - Click "Run Task" or press Ctrl+Enter
@@ -98,13 +107,12 @@ go test ./...
 go test -v ./...
 ```
 
-### Test Azure Connection
+### Test API Connection
 ```bash
 # Create .env file with your credentials
-echo "AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com" > .env
-echo "AZURE_OPENAI_KEY=your-api-key" >> .env
-echo "AZURE_OPENAI_DEPLOYMENT=gpt-4o" >> .env
-echo "AZURE_OPENAI_MODEL=gpt-4o" >> .env
+echo "LLM_ENDPOINT=https://api.openai.com/v1" > .env
+echo "LLM_API_KEY=your-api-key" >> .env
+echo "LLM_MODEL=gpt-4o" >> .env
 
 # Run connection test
 go run ./cmd/testapi
@@ -118,7 +126,7 @@ agent-desktop-go/
 ├── app.go                  # App struct with bound methods
 ├── internal/
 │   ├── config/            # Configuration management
-│   ├── llm/               # Azure OpenAI client
+│   ├── llm/               # OpenAI-compatible client
 │   ├── tools/             # Tool implementations (10 tools)
 │   └── agent/             # Agent loop and prompts
 ├── frontend/
@@ -163,7 +171,7 @@ The agent includes safety features:
 - **Desktop Framework**: Wails v2
 - **Frontend**: React 18 + TypeScript
 - **Styling**: Tailwind CSS v3
-- **LLM**: Azure OpenAI (GPT-4, GPT-4o, etc.)
+- **LLM**: Any OpenAI-compatible API (OpenAI, LM Studio, OpenRouter, etc.)
 
 ## License
 

@@ -22,10 +22,9 @@ import ConversationSidebar from './components/ConversationSidebar';
 import './style.css';
 
 interface Config {
-  openai_subscription_key: string;
-  openai_endpoint: string;
-  openai_deployment: string;
-  openai_model_name: string;
+  api_key: string;
+  endpoint: string;
+  model: string;
   execution_timeout: number;
 }
 

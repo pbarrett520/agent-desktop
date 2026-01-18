@@ -16,7 +16,7 @@ import (
 type App struct {
 	ctx    context.Context
 	config *config.Config
-	client *llm.AzureClient
+	client *llm.Client
 
 	// Conversation state
 	convManager *conversation.Manager
@@ -45,7 +45,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Initialize LLM client if configured
 	if cfg.IsConfigured() {
-		client, err := llm.NewAzureClient(cfg)
+		client, err := llm.NewClient(cfg)
 		if err == nil {
 			a.client = client
 		}
@@ -91,7 +91,7 @@ func (a *App) SaveConfig(cfg *config.Config) error {
 
 	// Reinitialize client with new config
 	if cfg.IsConfigured() {
-		client, err := llm.NewAzureClient(cfg)
+		client, err := llm.NewClient(cfg)
 		if err == nil {
 			a.client = client
 		}
@@ -100,12 +100,12 @@ func (a *App) SaveConfig(cfg *config.Config) error {
 	return nil
 }
 
-// IsConfigured returns true if the app is configured with Azure credentials
+// IsConfigured returns true if the app is configured with LLM credentials
 func (a *App) IsConfigured() bool {
 	return a.config != nil && a.config.IsConfigured()
 }
 
-// TestConnection tests the Azure OpenAI connection
+// TestConnection tests the LLM connection
 func (a *App) TestConnection() (bool, string) {
 	if a.config == nil {
 		return false, "No configuration loaded"
@@ -193,7 +193,7 @@ func (a *App) GetActiveConversation() *conversation.Conversation {
 // This is the main method for multi-turn chat.
 func (a *App) SendMessage(message string, taskContext string) {
 	if a.client == nil {
-		runtime.EventsEmit(a.ctx, "agent:error", "Azure OpenAI not configured")
+		runtime.EventsEmit(a.ctx, "agent:error", "LLM not configured")
 		return
 	}
 
@@ -290,7 +290,7 @@ func (a *App) SendMessage(message string, taskContext string) {
 // It emits events to the frontend as the agent progresses
 func (a *App) RunAgentTask(task string, taskContext string) {
 	if a.client == nil {
-		runtime.EventsEmit(a.ctx, "agent:error", "Azure OpenAI not configured")
+		runtime.EventsEmit(a.ctx, "agent:error", "LLM not configured")
 		return
 	}
 

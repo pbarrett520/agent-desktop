@@ -7,10 +7,10 @@ This project is a rewrite of a Python Streamlit-based AI agent application into 
 ## Session Accomplishments
 
 ### Phase 1: Configuration Module
-- Created `internal/config/config.go` - Azure OpenAI configuration management
+- Created `internal/config/config.go` - LLM configuration management
 - Created `internal/config/config_test.go` - TDD tests for config
 - Supports loading/saving config to `~/.agent_desktop/config.json`
-- Azure-specific parameters: endpoint, subscription key, deployment, model name
+- Generic OpenAI-compatible parameters: api_key, endpoint, model
 
 ### Phase 2: Safety & Path Utilities
 - Created `internal/tools/safety.go` - Command safety blocklist with regex patterns
@@ -29,11 +29,11 @@ This project is a rewrite of a Python Streamlit-based AI agent application into 
 - Created `internal/tools/dispatcher_test.go` - Tests for dispatcher
 
 ### Phase 4: LLM Client
-- Created `internal/llm/client.go` - Original go-openai based client (had Azure URL issues)
-- Created `internal/llm/azure_client.go` - Custom HTTP-based Azure OpenAI client (working)
+- Created `internal/llm/client.go` - OpenAI-compatible HTTP client
 - Created `internal/llm/client_test.go` - Tests for LLM client
 - Created `internal/llm/connection.go` - Connection testing
 - Created `internal/llm/connection_test.go` - Tests for connection
+- Supports any OpenAI-compatible endpoint (OpenAI, LM Studio, OpenRouter, etc.)
 
 ### Phase 5: Agent Loop
 - Created `internal/agent/step.go` - Step types (thinking, tool_call, tool_result, complete, error, usage)
@@ -48,7 +48,7 @@ This project is a rewrite of a Python Streamlit-based AI agent application into 
 - Updated `main.go` - Window configuration (1280x800, min 900x600)
 
 ### Phase 7: React Frontend
-- Created `frontend/src/components/Sidebar.tsx` - Azure config form, token usage display
+- Created `frontend/src/components/Sidebar.tsx` - LLM config form with provider presets, token usage display
 - Created `frontend/src/components/AgentMode.tsx` - Task input, execution controls
 - Created `frontend/src/components/AgentStepDisplay.tsx` - Step-by-step visualization
 - Updated `frontend/src/App.tsx` - Main layout with event handling
@@ -57,15 +57,21 @@ This project is a rewrite of a Python Streamlit-based AI agent application into 
 - Created `frontend/postcss.config.js` - PostCSS configuration
 
 ### Bug Fixes
-- Fixed Azure OpenAI API connection issue - go-openai library was constructing URLs incorrectly
-- Created custom `AzureClient` using direct HTTP requests matching Azure's expected URL format
 - Fixed CSS overflow issue where agent mode expanded beyond viewport
 - Added `overflow-hidden`, `min-w-0`, `break-words` to contain long output
 
 ### Testing Infrastructure
-- Created `cmd/testapi/main.go` - Live API testing tool for debugging Azure connection
+- Created `cmd/testapi/main.go` - Live API testing tool for debugging connections
 - All Go packages have comprehensive unit tests
 - Tests can be run with `go test ./...`
+
+## Supported LLM Providers
+
+The app supports any OpenAI-compatible endpoint:
+- **OpenAI** - `https://api.openai.com/v1`
+- **LM Studio** - `http://localhost:1234/v1` (local)
+- **OpenRouter** - `https://openrouter.ai/api/v1`
+- **Any OpenAI-compatible API** - Custom endpoints
 
 ## Design Tokens (Newell Brand)
 
@@ -94,7 +100,7 @@ agent-desktop-go/
 ├── app.go                  # App struct with bound methods
 ├── internal/
 │   ├── config/            # Configuration management
-│   ├── llm/               # Azure OpenAI client
+│   ├── llm/               # OpenAI-compatible client
 │   ├── tools/             # Tool implementations
 │   └── agent/             # Agent loop and prompts
 ├── frontend/
@@ -116,10 +122,11 @@ agent-desktop-go/
 
 ## Technical Notes
 
-### Azure OpenAI API
-The standard `go-openai` library had issues with Azure AI Foundry endpoints, returning 404 errors despite correct configuration. The solution was to create a custom `AzureClient` that makes direct HTTP requests with:
-- URL format: `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-10-21`
-- Header: `api-key: {subscription_key}`
+### OpenAI-Compatible API
+The app uses a custom HTTP client that works with any OpenAI-compatible endpoint:
+- URL format: `{endpoint}/chat/completions`
+- Header: `Authorization: Bearer {api_key}`
+- Supports tool calling (function calls)
 
 ### Wails Events
 The app uses Wails events for real-time communication:
@@ -129,8 +136,7 @@ The app uses Wails events for real-time communication:
 
 ### Configuration Storage
 Config is stored at `~/.agent_desktop/config.json` with fields:
-- `openai_subscription_key`
-- `openai_endpoint`
-- `openai_deployment`
-- `openai_model_name`
-- `execution_timeout`
+- `api_key` - API key for the LLM provider
+- `endpoint` - Base URL (e.g., https://api.openai.com/v1)
+- `model` - Model name (e.g., gpt-4o, deepseek-chat)
+- `execution_timeout` - Timeout in seconds

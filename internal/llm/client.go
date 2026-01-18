@@ -1,15 +1,19 @@
-// Package llm provides an Azure OpenAI client for chat completions with tool calling.
+// Package llm provides an OpenAI-compatible client for chat completions with tool calling.
+// It supports any OpenAI-compatible endpoint including OpenAI, LM Studio, OpenRouter, etc.
 package llm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
 
 	"agent-desktop/internal/config"
 	"agent-desktop/internal/tools"
-
-	openai "github.com/sashabaranov/go-openai"
 )
 
 // Message represents a chat message.
@@ -41,59 +45,123 @@ type Response struct {
 	Usage     *TokenUsage `json:"usage,omitempty"`
 }
 
-// Client is an Azure OpenAI client.
+// Client is an OpenAI-compatible API client.
+// It works with any endpoint that implements the OpenAI chat completions API:
+// - OpenAI (https://api.openai.com/v1)
+// - LM Studio (http://localhost:1234/v1)
+// - OpenRouter (https://openrouter.ai/api/v1)
+// - Any other OpenAI-compatible API
 type Client struct {
-	client     *openai.Client
-	deployment string
+	httpClient *http.Client
+	endpoint   string
+	apiKey     string
 	model      string
 }
 
-// NewClient creates a new Azure OpenAI client from the given configuration.
+// NewClient creates a new OpenAI-compatible client from the given configuration.
 func NewClient(cfg *config.Config) (*Client, error) {
 	if cfg == nil {
-		return nil, errors.New("config is nil")
+		return nil, fmt.Errorf("config is nil")
 	}
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Create Azure OpenAI config
-	azureConfig := openai.DefaultAzureConfig(cfg.OpenAISubscriptionKey, cfg.OpenAIEndpoint)
-	azureConfig.APIVersion = "2024-02-15-preview"
-
-	client := openai.NewClientWithConfig(azureConfig)
+	endpoint := strings.TrimSuffix(cfg.Endpoint, "/")
 
 	return &Client{
-		client:     client,
-		deployment: cfg.OpenAIDeployment,
-		model:      cfg.OpenAIModelName,
+		httpClient: &http.Client{Timeout: 120 * time.Second},
+		endpoint:   endpoint,
+		apiKey:     cfg.APIKey,
+		model:      cfg.Model,
 	}, nil
+}
+
+// chatRequest is the request body for chat completions.
+type chatRequest struct {
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
+	Tools    []chatTool    `json:"tools,omitempty"`
+}
+
+type chatMessage struct {
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+type chatTool struct {
+	Type     string             `json:"type"`
+	Function chatToolDefinition `json:"function"`
+}
+
+type chatToolDefinition struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Parameters  interface{} `json:"parameters"`
+}
+
+type chatToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function chatFunctionCall `json:"function"`
+}
+
+type chatFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// chatResponse is the response from chat completions.
+type chatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index        int    `json:"index"`
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
+			Role      string         `json:"role"`
+			Content   string         `json:"content"`
+			ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+	Error *struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+	} `json:"error,omitempty"`
 }
 
 // ChatCompletion sends a chat completion request with optional tool definitions.
 func (c *Client) ChatCompletion(ctx context.Context, messages []Message, toolDefs []tools.ToolDefinition) (*Response, error) {
-	// Convert messages to OpenAI format
-	openaiMessages := make([]openai.ChatCompletionMessage, len(messages))
+	// Convert messages to API format
+	chatMessages := make([]chatMessage, len(messages))
 	for i, msg := range messages {
-		openaiMsg := openai.ChatCompletionMessage{
+		chatMsg := chatMessage{
 			Role:    msg.Role,
 			Content: msg.Content,
 		}
 
-		// Handle tool call ID for tool messages
-		if msg.Role == "tool" && msg.ToolCallID != "" {
-			openaiMsg.ToolCallID = msg.ToolCallID
+		if msg.ToolCallID != "" {
+			chatMsg.ToolCallID = msg.ToolCallID
 		}
 
-		// Handle assistant messages with tool calls
-		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
-			openaiMsg.ToolCalls = make([]openai.ToolCall, len(msg.ToolCalls))
+		if len(msg.ToolCalls) > 0 {
+			chatMsg.ToolCalls = make([]chatToolCall, len(msg.ToolCalls))
 			for j, tc := range msg.ToolCalls {
-				openaiMsg.ToolCalls[j] = openai.ToolCall{
+				chatMsg.ToolCalls[j] = chatToolCall{
 					ID:   tc.ID,
-					Type: openai.ToolTypeFunction,
-					Function: openai.FunctionCall{
+					Type: "function",
+					Function: chatFunctionCall{
 						Name:      tc.Name,
 						Arguments: tc.Arguments,
 					},
@@ -101,53 +169,86 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, toolDef
 			}
 		}
 
-		openaiMessages[i] = openaiMsg
+		chatMessages[i] = chatMsg
 	}
 
-	// Convert tool definitions to OpenAI format
-	var openaiTools []openai.Tool
+	// Convert tool definitions to API format
+	var chatTools []chatTool
 	if len(toolDefs) > 0 {
-		openaiTools = make([]openai.Tool, len(toolDefs))
+		chatTools = make([]chatTool, len(toolDefs))
 		for i, def := range toolDefs {
-			// Marshal parameters to JSON bytes for FunctionDefinition
-			paramsBytes, err := json.Marshal(def.Function.Parameters)
-			if err != nil {
-				return nil, err
-			}
-
-			openaiTools[i] = openai.Tool{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
+			chatTools[i] = chatTool{
+				Type: "function",
+				Function: chatToolDefinition{
 					Name:        def.Function.Name,
 					Description: def.Function.Description,
-					Parameters:  json.RawMessage(paramsBytes),
+					Parameters:  def.Function.Parameters,
 				},
 			}
 		}
 	}
 
-	// Build request
-	req := openai.ChatCompletionRequest{
-		Model:    c.deployment, // Azure uses deployment name as model
-		Messages: openaiMessages,
+	// Build request body
+	reqBody := chatRequest{
+		Model:    c.model,
+		Messages: chatMessages,
+	}
+	if len(chatTools) > 0 {
+		reqBody.Tools = chatTools
 	}
 
-	if len(openaiTools) > 0 {
-		req.Tools = openaiTools
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	// Build URL - standard OpenAI format
+	url := fmt.Sprintf("%s/chat/completions", c.endpoint)
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	// Make request
-	resp, err := c.client.CreateChatCompletion(ctx, req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Check for HTTP errors
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(respBody))
 	}
 
 	// Parse response
-	if len(resp.Choices) == 0 {
-		return nil, errors.New("no choices in response")
+	var chatResp chatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	choice := resp.Choices[0]
+	// Check for API error in response
+	if chatResp.Error != nil {
+		return nil, fmt.Errorf("API error: %s", chatResp.Error.Message)
+	}
+
+	// Parse response
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
+	}
+
+	choice := chatResp.Choices[0]
 	result := &Response{
 		Content: choice.Message.Content,
 	}
@@ -165,23 +266,23 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, toolDef
 	}
 
 	// Parse usage
-	if resp.Usage.TotalTokens > 0 {
+	if chatResp.Usage.TotalTokens > 0 {
 		result.Usage = &TokenUsage{
-			PromptTokens:     resp.Usage.PromptTokens,
-			CompletionTokens: resp.Usage.CompletionTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
+			PromptTokens:     chatResp.Usage.PromptTokens,
+			CompletionTokens: chatResp.Usage.CompletionTokens,
+			TotalTokens:      chatResp.Usage.TotalTokens,
 		}
 	}
 
 	return result, nil
 }
 
-// GetDeployment returns the Azure deployment name.
-func (c *Client) GetDeployment() string {
-	return c.deployment
-}
-
 // GetModel returns the model name.
 func (c *Client) GetModel() string {
 	return c.model
+}
+
+// GetEndpoint returns the endpoint URL.
+func (c *Client) GetEndpoint() string {
+	return c.endpoint
 }

@@ -7,7 +7,7 @@ import (
 	"agent-desktop/internal/config"
 )
 
-// TestConnection tests the Azure OpenAI connection by making a minimal API call.
+// TestConnection tests the LLM connection by making a minimal API call.
 // Returns (true, "success message") on success, (false, "error message") on failure.
 func TestConnection(cfg *config.Config) (bool, string) {
 	if cfg == nil {
@@ -20,7 +20,7 @@ func TestConnection(cfg *config.Config) (bool, string) {
 	}
 
 	// Create client
-	client, err := NewAzureClient(cfg)
+	client, err := NewClient(cfg)
 	if err != nil {
 		return false, "Failed to create client: " + err.Error()
 	}
@@ -39,5 +39,5 @@ func TestConnection(cfg *config.Config) (bool, string) {
 		return false, "Connection failed: " + err.Error()
 	}
 
-	return true, "Connected successfully!"
+	return true, "Connected successfully to " + cfg.Endpoint + "!"
 }

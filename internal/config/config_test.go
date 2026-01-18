@@ -37,17 +37,14 @@ func TestLoadConfig_NotExists_ReturnsDefault(t *testing.T) {
 	}
 
 	// Should return default values
-	if cfg.OpenAISubscriptionKey != "" {
-		t.Errorf("expected empty OpenAISubscriptionKey, got %q", cfg.OpenAISubscriptionKey)
+	if cfg.APIKey != "" {
+		t.Errorf("expected empty APIKey, got %q", cfg.APIKey)
 	}
-	if cfg.OpenAIEndpoint != "" {
-		t.Errorf("expected empty OpenAIEndpoint, got %q", cfg.OpenAIEndpoint)
+	if cfg.Endpoint != "https://api.openai.com/v1" {
+		t.Errorf("expected default Endpoint, got %q", cfg.Endpoint)
 	}
-	if cfg.OpenAIDeployment != "" {
-		t.Errorf("expected empty OpenAIDeployment, got %q", cfg.OpenAIDeployment)
-	}
-	if cfg.OpenAIModelName != "" {
-		t.Errorf("expected empty OpenAIModelName, got %q", cfg.OpenAIModelName)
+	if cfg.Model != "" {
+		t.Errorf("expected empty Model, got %q", cfg.Model)
 	}
 	if cfg.ExecutionTimeout != 60 {
 		t.Errorf("expected ExecutionTimeout=60, got %d", cfg.ExecutionTimeout)
@@ -60,11 +57,10 @@ func TestLoadConfig_Exists_ParsesCorrectly(t *testing.T) {
 
 	// Create a config file
 	testConfig := Config{
-		OpenAISubscriptionKey: "test-key-123",
-		OpenAIEndpoint:        "https://test.openai.azure.com",
-		OpenAIDeployment:      "gpt-4o-deployment",
-		OpenAIModelName:       "gpt-4o",
-		ExecutionTimeout:      120,
+		APIKey:           "sk-test-key-123",
+		Endpoint:         "https://api.openai.com/v1",
+		Model:            "gpt-4o",
+		ExecutionTimeout: 120,
 	}
 
 	configPath := filepath.Join(tmpDir, "config.json")
@@ -78,20 +74,62 @@ func TestLoadConfig_Exists_ParsesCorrectly(t *testing.T) {
 		t.Fatalf("Load() returned error: %v", err)
 	}
 
-	if cfg.OpenAISubscriptionKey != "test-key-123" {
-		t.Errorf("expected OpenAISubscriptionKey='test-key-123', got %q", cfg.OpenAISubscriptionKey)
+	if cfg.APIKey != "sk-test-key-123" {
+		t.Errorf("expected APIKey='sk-test-key-123', got %q", cfg.APIKey)
 	}
-	if cfg.OpenAIEndpoint != "https://test.openai.azure.com" {
-		t.Errorf("expected OpenAIEndpoint='https://test.openai.azure.com', got %q", cfg.OpenAIEndpoint)
+	if cfg.Endpoint != "https://api.openai.com/v1" {
+		t.Errorf("expected Endpoint='https://api.openai.com/v1', got %q", cfg.Endpoint)
 	}
-	if cfg.OpenAIDeployment != "gpt-4o-deployment" {
-		t.Errorf("expected OpenAIDeployment='gpt-4o-deployment', got %q", cfg.OpenAIDeployment)
-	}
-	if cfg.OpenAIModelName != "gpt-4o" {
-		t.Errorf("expected OpenAIModelName='gpt-4o', got %q", cfg.OpenAIModelName)
+	if cfg.Model != "gpt-4o" {
+		t.Errorf("expected Model='gpt-4o', got %q", cfg.Model)
 	}
 	if cfg.ExecutionTimeout != 120 {
 		t.Errorf("expected ExecutionTimeout=120, got %d", cfg.ExecutionTimeout)
+	}
+}
+
+func TestLoadConfig_CustomEndpoints(t *testing.T) {
+	tmpDir, cleanup := setupTestConfigDir(t)
+	defer cleanup()
+
+	tests := []struct {
+		name     string
+		endpoint string
+		model    string
+	}{
+		{"OpenAI", "https://api.openai.com/v1", "gpt-4o"},
+		{"LMStudio", "http://localhost:1234/v1", "local-model"},
+		{"OpenRouter", "https://openrouter.ai/api/v1", "anthropic/claude-3-opus"},
+		{"Custom", "https://my-custom-api.com/v1", "custom-model"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testConfig := Config{
+				APIKey:           "test-key",
+				Endpoint:         tt.endpoint,
+				Model:            tt.model,
+				ExecutionTimeout: 60,
+			}
+
+			configPath := filepath.Join(tmpDir, "config.json")
+			data, _ := json.MarshalIndent(testConfig, "", "  ")
+			if err := os.WriteFile(configPath, data, 0644); err != nil {
+				t.Fatalf("failed to write test config: %v", err)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() returned error: %v", err)
+			}
+
+			if cfg.Endpoint != tt.endpoint {
+				t.Errorf("expected Endpoint=%q, got %q", tt.endpoint, cfg.Endpoint)
+			}
+			if cfg.Model != tt.model {
+				t.Errorf("expected Model=%q, got %q", tt.model, cfg.Model)
+			}
+		})
 	}
 }
 
@@ -103,11 +141,10 @@ func TestSaveConfig_CreatesDirectory(t *testing.T) {
 	os.RemoveAll(tmpDir)
 
 	cfg := &Config{
-		OpenAISubscriptionKey: "key",
-		OpenAIEndpoint:        "https://test.openai.azure.com",
-		OpenAIDeployment:      "deploy",
-		OpenAIModelName:       "model",
-		ExecutionTimeout:      60,
+		APIKey:           "key",
+		Endpoint:         "https://api.openai.com/v1",
+		Model:            "gpt-4o",
+		ExecutionTimeout: 60,
 	}
 
 	err := cfg.Save()
@@ -132,11 +169,10 @@ func TestSaveConfig_WritesValidJSON(t *testing.T) {
 	defer cleanup()
 
 	original := &Config{
-		OpenAISubscriptionKey: "my-secret-key",
-		OpenAIEndpoint:        "https://myresource.openai.azure.com",
-		OpenAIDeployment:      "gpt-4o",
-		OpenAIModelName:       "gpt-4o",
-		ExecutionTimeout:      90,
+		APIKey:           "my-secret-key",
+		Endpoint:         "https://openrouter.ai/api/v1",
+		Model:            "anthropic/claude-3-sonnet",
+		ExecutionTimeout: 90,
 	}
 
 	err := original.Save()
@@ -150,21 +186,17 @@ func TestSaveConfig_WritesValidJSON(t *testing.T) {
 		t.Fatalf("Load() returned error: %v", err)
 	}
 
-	if loaded.OpenAISubscriptionKey != original.OpenAISubscriptionKey {
-		t.Errorf("round-trip failed for OpenAISubscriptionKey: got %q, want %q",
-			loaded.OpenAISubscriptionKey, original.OpenAISubscriptionKey)
+	if loaded.APIKey != original.APIKey {
+		t.Errorf("round-trip failed for APIKey: got %q, want %q",
+			loaded.APIKey, original.APIKey)
 	}
-	if loaded.OpenAIEndpoint != original.OpenAIEndpoint {
-		t.Errorf("round-trip failed for OpenAIEndpoint: got %q, want %q",
-			loaded.OpenAIEndpoint, original.OpenAIEndpoint)
+	if loaded.Endpoint != original.Endpoint {
+		t.Errorf("round-trip failed for Endpoint: got %q, want %q",
+			loaded.Endpoint, original.Endpoint)
 	}
-	if loaded.OpenAIDeployment != original.OpenAIDeployment {
-		t.Errorf("round-trip failed for OpenAIDeployment: got %q, want %q",
-			loaded.OpenAIDeployment, original.OpenAIDeployment)
-	}
-	if loaded.OpenAIModelName != original.OpenAIModelName {
-		t.Errorf("round-trip failed for OpenAIModelName: got %q, want %q",
-			loaded.OpenAIModelName, original.OpenAIModelName)
+	if loaded.Model != original.Model {
+		t.Errorf("round-trip failed for Model: got %q, want %q",
+			loaded.Model, original.Model)
 	}
 	if loaded.ExecutionTimeout != original.ExecutionTimeout {
 		t.Errorf("round-trip failed for ExecutionTimeout: got %d, want %d",
@@ -184,38 +216,26 @@ func TestConfig_Validate_AllFieldsRequired(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "missing subscription key",
+			name: "missing api key",
 			config: Config{
-				OpenAIEndpoint:   "https://test.openai.azure.com",
-				OpenAIDeployment: "deploy",
-				OpenAIModelName:  "model",
+				Endpoint: "https://api.openai.com/v1",
+				Model:    "gpt-4o",
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing endpoint",
 			config: Config{
-				OpenAISubscriptionKey: "key",
-				OpenAIDeployment:      "deploy",
-				OpenAIModelName:       "model",
+				APIKey: "key",
+				Model:  "gpt-4o",
 			},
 			wantErr: true,
 		},
 		{
-			name: "missing deployment",
+			name: "missing model",
 			config: Config{
-				OpenAISubscriptionKey: "key",
-				OpenAIEndpoint:        "https://test.openai.azure.com",
-				OpenAIModelName:       "model",
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing model name",
-			config: Config{
-				OpenAISubscriptionKey: "key",
-				OpenAIEndpoint:        "https://test.openai.azure.com",
-				OpenAIDeployment:      "deploy",
+				APIKey:   "key",
+				Endpoint: "https://api.openai.com/v1",
 			},
 			wantErr: true,
 		},
@@ -233,11 +253,10 @@ func TestConfig_Validate_AllFieldsRequired(t *testing.T) {
 
 func TestConfig_Validate_Success(t *testing.T) {
 	cfg := Config{
-		OpenAISubscriptionKey: "key",
-		OpenAIEndpoint:        "https://test.openai.azure.com",
-		OpenAIDeployment:      "deploy",
-		OpenAIModelName:       "model",
-		ExecutionTimeout:      60,
+		APIKey:           "key",
+		Endpoint:         "https://api.openai.com/v1",
+		Model:            "gpt-4o",
+		ExecutionTimeout: 60,
 	}
 
 	err := cfg.Validate()
@@ -258,20 +277,19 @@ func TestConfig_IsConfigured(t *testing.T) {
 			want:   false,
 		},
 		{
-			name: "partial config",
+			name: "partial config - missing model",
 			config: Config{
-				OpenAISubscriptionKey: "key",
-				OpenAIEndpoint:        "https://test.openai.azure.com",
+				APIKey:   "key",
+				Endpoint: "https://api.openai.com/v1",
 			},
 			want: false,
 		},
 		{
 			name: "complete config",
 			config: Config{
-				OpenAISubscriptionKey: "key",
-				OpenAIEndpoint:        "https://test.openai.azure.com",
-				OpenAIDeployment:      "deploy",
-				OpenAIModelName:       "model",
+				APIKey:   "key",
+				Endpoint: "https://api.openai.com/v1",
+				Model:    "gpt-4o",
 			},
 			want: true,
 		},

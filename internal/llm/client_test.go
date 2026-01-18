@@ -8,10 +8,9 @@ import (
 
 func TestNewClient_ValidConfig(t *testing.T) {
 	cfg := &config.Config{
-		OpenAISubscriptionKey: "test-key",
-		OpenAIEndpoint:        "https://test.openai.azure.com",
-		OpenAIDeployment:      "gpt-4o",
-		OpenAIModelName:       "gpt-4o",
+		APIKey:   "sk-test-key",
+		Endpoint: "https://api.openai.com/v1",
+		Model:    "gpt-4o",
 	}
 
 	client, err := NewClient(cfg)
@@ -21,11 +20,45 @@ func TestNewClient_ValidConfig(t *testing.T) {
 	if client == nil {
 		t.Fatal("NewClient returned nil")
 	}
-	if client.deployment != "gpt-4o" {
-		t.Errorf("deployment = %q, want %q", client.deployment, "gpt-4o")
-	}
 	if client.model != "gpt-4o" {
 		t.Errorf("model = %q, want %q", client.model, "gpt-4o")
+	}
+	if client.endpoint != "https://api.openai.com/v1" {
+		t.Errorf("endpoint = %q, want %q", client.endpoint, "https://api.openai.com/v1")
+	}
+}
+
+func TestNewClient_DifferentEndpoints(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		model    string
+	}{
+		{"OpenAI", "https://api.openai.com/v1", "gpt-4o"},
+		{"LMStudio", "http://localhost:1234/v1", "local-model"},
+		{"OpenRouter", "https://openrouter.ai/api/v1", "anthropic/claude-3-opus"},
+		{"Custom", "https://my-custom-api.com/v1", "custom-model"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				APIKey:   "test-key",
+				Endpoint: tt.endpoint,
+				Model:    tt.model,
+			}
+
+			client, err := NewClient(cfg)
+			if err != nil {
+				t.Fatalf("NewClient failed: %v", err)
+			}
+			if client.endpoint != tt.endpoint {
+				t.Errorf("endpoint = %q, want %q", client.endpoint, tt.endpoint)
+			}
+			if client.model != tt.model {
+				t.Errorf("model = %q, want %q", client.model, tt.model)
+			}
+		})
 	}
 }
 
@@ -41,17 +74,22 @@ func TestNewClient_InvalidConfig(t *testing.T) {
 		{
 			name: "missing endpoint",
 			config: &config.Config{
-				OpenAISubscriptionKey: "key",
-				OpenAIDeployment:      "deploy",
-				OpenAIModelName:       "model",
+				APIKey: "key",
+				Model:  "gpt-4o",
 			},
 		},
 		{
 			name: "missing key",
 			config: &config.Config{
-				OpenAIEndpoint:   "https://test.openai.azure.com",
-				OpenAIDeployment: "deploy",
-				OpenAIModelName:  "model",
+				Endpoint: "https://api.openai.com/v1",
+				Model:    "gpt-4o",
+			},
+		},
+		{
+			name: "missing model",
+			config: &config.Config{
+				APIKey:   "key",
+				Endpoint: "https://api.openai.com/v1",
 			},
 		},
 	}
@@ -147,5 +185,31 @@ func TestResponse(t *testing.T) {
 	}
 }
 
+func TestClient_GetModel(t *testing.T) {
+	cfg := &config.Config{
+		APIKey:   "test-key",
+		Endpoint: "https://api.openai.com/v1",
+		Model:    "gpt-4o",
+	}
+
+	client, _ := NewClient(cfg)
+	if client.GetModel() != "gpt-4o" {
+		t.Errorf("GetModel() = %q, want %q", client.GetModel(), "gpt-4o")
+	}
+}
+
+func TestClient_GetEndpoint(t *testing.T) {
+	cfg := &config.Config{
+		APIKey:   "test-key",
+		Endpoint: "https://api.openai.com/v1",
+		Model:    "gpt-4o",
+	}
+
+	client, _ := NewClient(cfg)
+	if client.GetEndpoint() != "https://api.openai.com/v1" {
+		t.Errorf("GetEndpoint() = %q, want %q", client.GetEndpoint(), "https://api.openai.com/v1")
+	}
+}
+
 // Note: Actual API call tests would require mocking or integration test setup
-// The ChatCompletion method will be tested via integration tests with a real Azure endpoint
+// The ChatCompletion method will be tested via integration tests with a real endpoint

@@ -1,10 +1,9 @@
 export namespace config {
 	
 	export class Config {
-	    openai_subscription_key: string;
-	    openai_endpoint: string;
-	    openai_deployment: string;
-	    openai_model_name: string;
+	    api_key: string;
+	    endpoint: string;
+	    model: string;
 	    execution_timeout: number;
 	
 	    static createFrom(source: any = {}) {
@@ -13,10 +12,9 @@ export namespace config {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.openai_subscription_key = source["openai_subscription_key"];
-	        this.openai_endpoint = source["openai_endpoint"];
-	        this.openai_deployment = source["openai_deployment"];
-	        this.openai_model_name = source["openai_model_name"];
+	        this.api_key = source["api_key"];
+	        this.endpoint = source["endpoint"];
+	        this.model = source["model"];
 	        this.execution_timeout = source["execution_timeout"];
 	    }
 	}
