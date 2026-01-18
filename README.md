@@ -1,130 +1,170 @@
-# 🤖 Agent Desktop
+# Agent Desktop
 
-A simple tool for non-technical users to describe tasks in plain English and have an AI generate and execute scripts for them.
+A desktop AI agent application built with Go (Wails) and React/TypeScript. The agent can execute shell commands, manage files, and complete tasks autonomously using Azure OpenAI.
 
-## The Problem
+## Features
 
-You're a graphic designer. You asked ChatGPT to write a Python script to rename all your JPG files to lowercase. It gave you a script. Now what? You don't have Python installed, you don't know what a terminal is, and the script just sits there useless.
+- **Agent Mode**: AI assistant that can execute commands and manage files
+- **Azure OpenAI Integration**: Connect to your Azure OpenAI deployment
+- **Safe Command Execution**: Built-in blocklist prevents dangerous commands
+- **Real-time Progress**: Watch the agent work step-by-step
+- **Token Usage Tracking**: Monitor API usage and estimated costs
+- **Cross-platform**: Runs on Windows, macOS, and Linux
 
-## The Solution
+## Prerequisites
 
-Agent Desktop closes that gap. Describe what you want in plain English, and the app:
+- [Go 1.21+](https://golang.org/dl/)
+- [Node.js 18+](https://nodejs.org/)
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
-1. **Generates** a script using your preferred AI provider
-2. **Explains** what the script will do in plain English
-3. **Shows** which files will be affected
-4. **Executes** the script with your confirmation
-
-## Quick Start
-
+Install Wails CLI:
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the app
-streamlit run agent_desktop.py
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
-The app will open in your browser at `http://localhost:8501`.
+## Building
 
-## First-Time Setup
+### Development Mode
 
-1. Click **"+ Add Provider"** in the sidebar
-2. Choose your AI provider type (OpenAI, OpenRouter, LM Studio, or Azure)
-3. Enter your API key
-4. Add the models you want to use
-5. Click **Save**
+Run with hot-reload for development:
+```bash
+wails dev
+```
 
-## Supported Providers
+The frontend dev server runs at `http://localhost:5173/` for debugging.
 
-| Provider | Type | Description |
-|----------|------|-------------|
-| **OpenAI** | `openai` | Direct OpenAI API access |
-| **OpenRouter** | `openrouter` | Multi-model aggregator with many providers |
-| **LM Studio** | `lmstudio` | Local models running on your machine |
-| **Azure OpenAI** | `azure` | Microsoft Azure-hosted OpenAI models |
+### Production Build
 
-### Example Configurations
+Build the production executable:
+```bash
+wails build
+```
 
-#### OpenAI
-- **Type:** `openai`
-- **Base URL:** `https://api.openai.com/v1`
-- **API Key:** Your OpenAI API key
-- **Models:** `gpt-4o`, `gpt-4o-mini`
+The built application will be at:
+- Windows: `build/bin/agent-desktop.exe`
+- macOS: `build/bin/agent-desktop.app`
+- Linux: `build/bin/agent-desktop`
 
-#### OpenRouter
-- **Type:** `openrouter`
-- **Base URL:** `https://openrouter.ai/api/v1`
-- **API Key:** Your OpenRouter API key
-- **Models:** `anthropic/claude-3.5-sonnet`, `openai/gpt-4o`
+## Running
 
-#### LM Studio (Local)
-- **Type:** `lmstudio`
-- **Base URL:** `http://localhost:1234/v1`
-- **API Key:** `not-needed`
-- **Models:** Use the 🔄 Refresh button to auto-discover
+### From Built Executable
+
+```bash
+# Windows
+.\build\bin\agent-desktop.exe
+
+# macOS/Linux
+./build/bin/agent-desktop
+```
+
+### Configuration
+
+On first run, configure your Azure OpenAI credentials in the sidebar:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| Endpoint | Azure OpenAI resource URL | `https://your-resource.openai.azure.com` |
+| API Key | Your Azure OpenAI subscription key | `abc123...` |
+| Deployment Name | Your model deployment name | `gpt-4o` |
+| Model Name | The underlying model | `gpt-4o` |
+| Timeout | Execution timeout in seconds | `60` |
+
+Configuration is saved to `~/.agent_desktop/config.json`.
 
 ## Usage
 
-1. **Describe your task** in the main text area
-   - Example: "Rename all .jpg files in ~/Downloads to lowercase"
-   
-2. **Add context** (optional)
-   - Specify working directory
-   - Add constraints or requirements
+1. **Configure Azure OpenAI** - Enter your credentials in the sidebar and click "Save"
+2. **Test Connection** - Click "Test" to verify your configuration
+3. **Enter a Task** - Type what you want the agent to do
+4. **Run Task** - Click "Run Task" or press Ctrl+Enter
+5. **Watch Progress** - See the agent's thinking, tool calls, and results in real-time
 
-3. **Click Generate**
-   - Review the explanation
-   - Check the script
-   - See affected files
+### Example Tasks
 
-4. **Click Execute**
-   - Watch the output
-   - See results
+- "List all Python files in my Documents folder"
+- "Create a new folder called 'project' and add a README.md file"
+- "Find files larger than 10MB in the current directory"
+- "Show me the contents of config.json"
 
-## Safety Features
+## Testing
 
-- **Confirmation required** before execution (configurable)
-- **Timeout protection** prevents runaway scripts (default: 60 seconds)
-- **Clear file impact display** shows exactly what will be modified
-- **Script preview** lets you review before running
-
-## Configuration
-
-Configuration is stored in `~/.agent_desktop/config.json`:
-
-```json
-{
-  "providers": [
-    {
-      "name": "OpenAI",
-      "type": "openai",
-      "base_url": "https://api.openai.com/v1",
-      "api_key": "sk-...",
-      "models": ["gpt-4o", "gpt-4o-mini"]
-    }
-  ],
-  "active_provider": "OpenAI",
-  "active_model": "gpt-4o",
-  "execution_timeout": 60,
-  "confirm_before_execute": true
-}
+### Run All Go Tests
+```bash
+go test ./...
 ```
 
-## Tips
+### Run Tests with Verbose Output
+```bash
+go test -v ./...
+```
 
-- **Be specific** in your task descriptions
-- **Mention the operating system** if it matters (Windows vs. Mac/Linux)
-- **Start small** - test with non-destructive tasks first
-- **Use local models** (LM Studio) for privacy-sensitive tasks
+### Test Azure Connection
+```bash
+# Create .env file with your credentials
+echo "AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com" > .env
+echo "AZURE_OPENAI_KEY=your-api-key" >> .env
+echo "AZURE_OPENAI_DEPLOYMENT=gpt-4o" >> .env
+echo "AZURE_OPENAI_MODEL=gpt-4o" >> .env
 
-## Requirements
+# Run connection test
+go run ./cmd/testapi
+```
 
-- Python 3.9+
-- An AI provider API key (or local LM Studio)
-- Dependencies: `streamlit`, `openai`, `requests`
+## Project Structure
+
+```
+agent-desktop-go/
+├── main.go                 # Wails entry point
+├── app.go                  # App struct with bound methods
+├── internal/
+│   ├── config/            # Configuration management
+│   ├── llm/               # Azure OpenAI client
+│   ├── tools/             # Tool implementations (10 tools)
+│   └── agent/             # Agent loop and prompts
+├── frontend/
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   ├── App.tsx        # Main app component
+│   │   └── style.css      # Tailwind CSS styles
+│   └── wailsjs/           # Generated Wails bindings
+├── cmd/
+│   └── testapi/           # API testing utility
+├── build/                 # Build output
+└── python-reference/      # Original Python app for reference
+```
+
+## Available Tools
+
+The agent has access to these tools:
+
+| Tool | Description |
+|------|-------------|
+| `run_command` | Execute shell commands |
+| `read_file` | Read file contents |
+| `write_file` | Create or modify files |
+| `list_directory` | List directory contents |
+| `delete_file` | Delete files |
+| `copy_file` | Copy files |
+| `move_file` | Move/rename files |
+| `get_current_directory` | Get current working directory |
+| `change_directory` | Change working directory |
+| `task_complete` | Signal task completion |
+
+## Safety
+
+The agent includes safety features:
+- **Command Blocklist**: Prevents dangerous commands like `rm -rf /`, `format`, `del /s /q`
+- **Path Validation**: Validates and expands file paths safely
+- **Timeout Protection**: Commands timeout after configured duration
+
+## Tech Stack
+
+- **Backend**: Go 1.21+
+- **Desktop Framework**: Wails v2
+- **Frontend**: React 18 + TypeScript
+- **Styling**: Tailwind CSS v3
+- **LLM**: Azure OpenAI (GPT-4, GPT-4o, etc.)
 
 ## License
 
 MIT
-
