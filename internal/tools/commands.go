@@ -20,6 +20,14 @@ func RunCommand(command string, workingDir string, timeout int) ToolResult {
 		return ToolResult{Success: false, Error: reason}
 	}
 
+	return runShell(command, workingDir, timeout)
+}
+
+// runShell executes command in a bash/cmd subshell and records it in the
+// session history. Unlike RunCommand, it does not run the local blocklist —
+// callers (e.g. az_query, after ClassifyAzCommand) are expected to have
+// already made their own risk decision.
+func runShell(command string, workingDir string, timeout int) ToolResult {
 	session := GetSession()
 
 	// Determine working directory

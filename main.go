@@ -17,7 +17,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "Agent Desktop",
+		Title:  "Nimbus",
 		Width:  1280,
 		Height: 800,
 		MinWidth: 900,

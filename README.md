@@ -1,4 +1,4 @@
-# Agent Desktop
+# Nimbus
 
 A desktop AI agent application built with Go (Wails) and React/TypeScript. The agent can execute shell commands, manage files, and complete tasks autonomously using any OpenAI-compatible LLM.
 
@@ -50,9 +50,9 @@ wails build
 ```
 
 The built application will be at:
-- Windows: `build/bin/agent-desktop.exe`
-- macOS: `build/bin/agent-desktop.app`
-- Linux: `build/bin/agent-desktop`
+- Windows: `build/bin/nimbus.exe`
+- macOS: `build/bin/nimbus.app`
+- Linux: `build/bin/nimbus`
 
 ## Running
 
@@ -60,10 +60,10 @@ The built application will be at:
 
 ```bash
 # Windows
-.\build\bin\agent-desktop.exe
+.\build\bin\nimbus.exe
 
 # macOS/Linux
-./build/bin/agent-desktop
+./build/bin/nimbus
 ```
 
 ### Configuration
@@ -121,7 +121,7 @@ go run ./cmd/testapi
 ## Project Structure
 
 ```
-agent-desktop-go/
+nimbus/
 ├── main.go                 # Wails entry point
 ├── app.go                  # App struct with bound methods
 ├── internal/

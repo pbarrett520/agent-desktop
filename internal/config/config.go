@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // configDir is the directory where configuration files are stored.
@@ -21,6 +22,12 @@ func init() {
 	}
 	configDir = filepath.Join(home, ".agent_desktop")
 }
+
+// Mode selects which tool surface the agent exposes.
+const (
+	ModeGeneral  = "GENERAL"
+	ModeCloudOps = "CLOUD_OPS"
+)
 
 // Config holds the LLM configuration and execution settings.
 // It supports any OpenAI-compatible endpoint including:
@@ -36,6 +43,10 @@ type Config struct {
 
 	// Execution settings
 	ExecutionTimeout int `json:"execution_timeout"`
+
+	// Mode selects the agent's tool surface: ModeGeneral or ModeCloudOps.
+	// Defaults to ModeCloudOps.
+	Mode string `json:"mode"`
 }
 
 // getConfigPath returns the full path to the config file.
@@ -55,6 +66,7 @@ func Load() (*Config, error) {
 			return &Config{
 				Endpoint:         "https://api.openai.com/v1",
 				ExecutionTimeout: 60,
+				Mode:             ModeCloudOps,
 			}, nil
 		}
 		return nil, err
@@ -70,10 +82,18 @@ func Load() (*Config, error) {
 		cfg.ExecutionTimeout = 60
 	}
 
+	// Default to cloud ops mode if not set (covers configs saved before Mode existed).
+	if cfg.Mode == "" {
+		cfg.Mode = ModeCloudOps
+	}
+
 	// Set default endpoint if not set
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = "https://api.openai.com/v1"
 	}
+
+	// Normalize endpoint to ensure /v1 suffix
+	cfg.Endpoint = normalizeEndpoint(cfg.Endpoint)
 
 	return &cfg, nil
 }
@@ -94,9 +114,30 @@ func (c *Config) Save() error {
 	return os.WriteFile(getConfigPath(), data, 0644)
 }
 
+// isLocalEndpoint checks if the endpoint points to a local LLM server.
+func isLocalEndpoint(endpoint string) bool {
+	return strings.Contains(endpoint, "localhost") || strings.Contains(endpoint, "127.0.0.1")
+}
+
+// normalizeEndpoint ensures the endpoint has the /v1 path suffix
+// for known providers. LM Studio, OpenAI, and OpenRouter all require it.
+func normalizeEndpoint(endpoint string) string {
+	endpoint = strings.TrimSuffix(endpoint, "/")
+	if !strings.HasSuffix(endpoint, "/v1") {
+		// For local endpoints (LM Studio) and known providers, append /v1
+		if isLocalEndpoint(endpoint) ||
+			strings.Contains(endpoint, "api.openai.com") ||
+			strings.Contains(endpoint, "openrouter.ai") {
+			endpoint += "/v1"
+		}
+	}
+	return endpoint
+}
+
 // Validate checks if the configuration has all required fields.
+// It also normalizes the endpoint URL.
 func (c *Config) Validate() error {
-	if c.APIKey == "" {
+	if c.APIKey == "" && !isLocalEndpoint(c.Endpoint) {
 		return errors.New("api_key is required")
 	}
 	if c.Endpoint == "" {
@@ -105,12 +146,14 @@ func (c *Config) Validate() error {
 	if c.Model == "" {
 		return errors.New("model is required")
 	}
+	// Normalize endpoint to ensure /v1 suffix
+	c.Endpoint = normalizeEndpoint(c.Endpoint)
 	return nil
 }
 
 // IsConfigured returns true if all required fields are set.
 func (c *Config) IsConfigured() bool {
-	return c.APIKey != "" &&
+	return (c.APIKey != "" || isLocalEndpoint(c.Endpoint)) &&
 		c.Endpoint != "" &&
 		c.Model != ""
 }

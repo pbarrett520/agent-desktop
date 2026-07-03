@@ -2,8 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os/user"
+	"sync"
+	"time"
 
 	"agent-desktop/internal/agent"
+	"agent-desktop/internal/audit"
+	"agent-desktop/internal/azure"
 	"agent-desktop/internal/config"
 	"agent-desktop/internal/conversation"
 	"agent-desktop/internal/llm"
@@ -24,17 +33,38 @@ type App struct {
 	// Agent state
 	agentCancel context.CancelFunc
 	agentCtx    context.Context
+
+	// sessionID identifies this app run in the audit trail.
+	sessionID string
+
+	// pendingProposals holds az_propose proposals awaiting a user decision,
+	// keyed by Proposal.ID.
+	pendingProposalsMu sync.Mutex
+	pendingProposals   map[string]tools.Proposal
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		pendingProposals: make(map[string]tools.Proposal),
+	}
+}
+
+// newSessionID generates a short random identifier for the audit trail.
+func newSessionID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("session-%d", time.Now().UnixNano())
+	}
+	return "session-" + hex.EncodeToString(buf)
 }
 
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.sessionID = newSessionID()
+	tools.SetSessionID(a.sessionID)
 
 	// Load configuration
 	cfg, err := config.Load()
@@ -69,7 +99,11 @@ func (a *App) initConversationManager() {
 		return
 	}
 
-	systemPrompt := agent.GetSystemPrompt()
+	mode := config.ModeCloudOps
+	if a.config != nil && a.config.Mode != "" {
+		mode = a.config.Mode
+	}
+	systemPrompt := agent.GetSystemPrompt(mode)
 	a.convManager = conversation.NewManager(store, a.client, systemPrompt)
 }
 
@@ -113,6 +147,75 @@ func (a *App) TestConnection() (bool, string) {
 		return false, "No configuration loaded"
 	}
 	return llm.TestConnection(a.config)
+}
+
+// FetchModels fetches available models from an OpenAI-compatible endpoint.
+// This works without a fully configured client — only endpoint and optional
+// API key are needed. Returns chat models only (embedding models filtered out).
+func (a *App) FetchModels(endpoint string, apiKey string) ([]llm.ModelInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return llm.FetchModels(ctx, endpoint, apiKey)
+}
+
+// CheckEndpointHealth checks if an endpoint is reachable without requiring
+// a model to be configured. Useful for showing connection status for LM Studio.
+func (a *App) CheckEndpointHealth(endpoint string, apiKey string) (bool, string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return llm.CheckEndpointHealth(ctx, endpoint, apiKey)
+}
+
+// ============================================================================
+// Azure Context Methods
+// ============================================================================
+
+// GetAzureContext detects az CLI installation, login state, and the active
+// tenant/subscription/user for the consultant's own authenticated session.
+func (a *App) GetAzureContext() *azure.Context {
+	return azure.GetAzureContext()
+}
+
+// ListSubscriptions returns all subscriptions visible to the current az login.
+func (a *App) ListSubscriptions() ([]azure.Subscription, error) {
+	return azure.ListSubscriptions()
+}
+
+// SetSubscription switches the active subscription for the local az session.
+func (a *App) SetSubscription(id string) error {
+	return azure.SetSubscription(id)
+}
+
+// ListResourceGroups returns resource groups and resource counts for the
+// subscription overview dashboard.
+func (a *App) ListResourceGroups() ([]azure.ResourceGroupSummary, error) {
+	return azure.ListResourceGroups()
+}
+
+// ListVMPowerStates returns VM power states for the subscription overview dashboard.
+func (a *App) ListVMPowerStates() ([]azure.VMPowerState, error) {
+	return azure.ListVMPowerStates()
+}
+
+// GetMonthlyCost returns this month's cost to date for subscriptionID, or an
+// error if the costmanagement extension isn't available — the frontend
+// degrades gracefully in that case.
+func (a *App) GetMonthlyCost(subscriptionID string) (*azure.CostSummary, error) {
+	return azure.GetMonthlyCost(subscriptionID)
+}
+
+// ============================================================================
+// Audit Methods
+// ============================================================================
+
+// GetAuditLog returns every recorded audit event, oldest first. The
+// frontend Audit panel sorts/filters client-side.
+func (a *App) GetAuditLog() ([]audit.Event, error) {
+	path, err := audit.DefaultPath()
+	if err != nil {
+		return nil, err
+	}
+	return audit.ReadAll(path)
 }
 
 // ============================================================================
@@ -191,6 +294,83 @@ func (a *App) GetActiveConversation() *conversation.Conversation {
 	return a.convManager.GetActive()
 }
 
+// currentMode returns the configured agent mode, defaulting to cloud ops.
+func (a *App) currentMode() string {
+	if a.config != nil && a.config.Mode != "" {
+		return a.config.Mode
+	}
+	return config.ModeCloudOps
+}
+
+// maxStepsFromConfig derives a step budget from the configured execution timeout.
+func (a *App) maxStepsFromConfig() int {
+	maxSteps := 20
+	if a.config != nil && a.config.ExecutionTimeout > 0 {
+		maxSteps = a.config.ExecutionTimeout / 3
+		if maxSteps < 10 {
+			maxSteps = 10
+		}
+		if maxSteps > 50 {
+			maxSteps = 50
+		}
+	}
+	return maxSteps
+}
+
+// runContinuation drives a ContinueConversation channel to completion,
+// syncing conversation state and emitting frontend events. Shared by
+// SendMessage and ResolveProposal so both entry points behave identically.
+func (a *App) runContinuation(messages []llm.Message) {
+	for step := range agent.ContinueConversation(a.agentCtx, a.client, messages, a.maxStepsFromConfig(), a.currentMode()) {
+		// Emit step to frontend
+		runtime.EventsEmit(a.ctx, "agent:step", step)
+
+		// Update conversation with new messages if present
+		if step.Messages != nil {
+			// Find and add new messages since last sync
+			currentMsgs := a.convManager.GetMessages()
+			for i := len(currentMsgs); i < len(step.Messages); i++ {
+				msg := step.Messages[i]
+				if msg.Role == "assistant" {
+					a.convManager.AddAssistantMessage(msg)
+				} else if msg.Role == "tool" {
+					a.convManager.AddToolMessage(msg.ToolCallID, msg.Content)
+				}
+			}
+		}
+
+		// Handle completion states
+		if step.Type == agent.StepTypeComplete {
+			// Generate title if this is the first completion
+			go a.convManager.GenerateTitle(context.Background())
+			runtime.EventsEmit(a.ctx, "agent:complete", step.Content)
+			return
+		}
+		if step.Type == agent.StepTypeAssistantMessage {
+			// Conversational response - also triggers title generation
+			go a.convManager.GenerateTitle(context.Background())
+			runtime.EventsEmit(a.ctx, "agent:message", step.Content)
+			return
+		}
+		if step.Type == agent.StepTypeError {
+			runtime.EventsEmit(a.ctx, "agent:error", step.Content)
+			return
+		}
+		if step.Type == agent.StepTypeAwaitingApproval {
+			var proposal tools.Proposal
+			if err := json.Unmarshal([]byte(step.Content), &proposal); err != nil {
+				runtime.EventsEmit(a.ctx, "agent:error", "Failed to parse proposal: "+err.Error())
+				return
+			}
+			a.pendingProposalsMu.Lock()
+			a.pendingProposals[proposal.ID] = proposal
+			a.pendingProposalsMu.Unlock()
+			runtime.EventsEmit(a.ctx, "agent:awaiting_approval", proposal)
+			return
+		}
+	}
+}
+
 // SendMessage sends a message to the active conversation and runs the agent.
 // This is the main method for multi-turn chat.
 func (a *App) SendMessage(message string, taskContext string) {
@@ -230,58 +410,68 @@ func (a *App) SendMessage(message string, taskContext string) {
 			return
 		}
 
-		// Get messages for the agent
-		messages := a.convManager.GetMessages()
-
-		maxSteps := 20
-		if a.config.ExecutionTimeout > 0 {
-			maxSteps = a.config.ExecutionTimeout / 3
-			if maxSteps < 10 {
-				maxSteps = 10
-			}
-			if maxSteps > 50 {
-				maxSteps = 50
-			}
-		}
-
-		// Run conversation continuation
-		for step := range agent.ContinueConversation(a.agentCtx, a.client, messages, maxSteps) {
-			// Emit step to frontend
-			runtime.EventsEmit(a.ctx, "agent:step", step)
-
-			// Update conversation with new messages if present
-			if step.Messages != nil {
-				// Find and add new messages since last sync
-				currentMsgs := a.convManager.GetMessages()
-				for i := len(currentMsgs); i < len(step.Messages); i++ {
-					msg := step.Messages[i]
-					if msg.Role == "assistant" {
-						a.convManager.AddAssistantMessage(msg)
-					} else if msg.Role == "tool" {
-						a.convManager.AddToolMessage(msg.ToolCallID, msg.Content)
-					}
-				}
-			}
-
-			// Handle completion states
-			if step.Type == agent.StepTypeComplete {
-				// Generate title if this is the first completion
-				go a.convManager.GenerateTitle(context.Background())
-				runtime.EventsEmit(a.ctx, "agent:complete", step.Content)
-				return
-			}
-			if step.Type == agent.StepTypeAssistantMessage {
-				// Conversational response - also triggers title generation
-				go a.convManager.GenerateTitle(context.Background())
-				runtime.EventsEmit(a.ctx, "agent:message", step.Content)
-				return
-			}
-			if step.Type == agent.StepTypeError {
-				runtime.EventsEmit(a.ctx, "agent:error", step.Content)
-				return
-			}
-		}
+		a.runContinuation(a.convManager.GetMessages())
 	}()
+}
+
+// ResolveProposal handles the user's Approve/Deny decision on a pending
+// az_propose proposal. On approve, it executes the command and streams the
+// result back into the conversation; on deny, the agent is told and must
+// adapt. Either way, the agent loop resumes afterward.
+func (a *App) ResolveProposal(proposalID string, approved bool) {
+	if a.client == nil || a.convManager == nil {
+		runtime.EventsEmit(a.ctx, "agent:error", "Agent not ready to resolve proposal")
+		return
+	}
+
+	a.pendingProposalsMu.Lock()
+	proposal, ok := a.pendingProposals[proposalID]
+	if ok {
+		delete(a.pendingProposals, proposalID)
+	}
+	a.pendingProposalsMu.Unlock()
+
+	if !ok {
+		runtime.EventsEmit(a.ctx, "agent:error", "Unknown or already-resolved proposal: "+proposalID)
+		return
+	}
+
+	decidedBy := currentOSUser()
+
+	var followUp string
+	if approved {
+		result := tools.ExecuteApprovedProposal(proposal.Command, proposal.Tier, decidedBy)
+		if result.Success {
+			followUp = fmt.Sprintf("[System] Command approved by %s and executed:\n%s\n\nOutput:\n%s", decidedBy, proposal.Command, result.Output)
+		} else {
+			followUp = fmt.Sprintf("[System] Command approved by %s but failed to execute:\n%s\n\nError:\n%s", decidedBy, proposal.Command, result.Error)
+		}
+	} else {
+		tools.RecordDenial(proposal.Command, proposal.Tier, decidedBy)
+		followUp = fmt.Sprintf("[System] Command denied by %s:\n%s\n\nDo not attempt this operation again without further instructions from the user.", decidedBy, proposal.Command)
+	}
+
+	if err := a.convManager.AddUserMessage(followUp); err != nil {
+		runtime.EventsEmit(a.ctx, "agent:error", "Failed to record decision: "+err.Error())
+		return
+	}
+
+	if a.agentCancel != nil {
+		a.agentCancel()
+	}
+	a.agentCtx, a.agentCancel = context.WithCancel(context.Background())
+
+	go a.runContinuation(a.convManager.GetMessages())
+}
+
+// currentOSUser best-efforts the local OS username for audit/approval
+// attribution in this single-user desktop app.
+func currentOSUser() string {
+	u, err := user.Current()
+	if err != nil || u.Username == "" {
+		return "user"
+	}
+	return u.Username
 }
 
 // ============================================================================
@@ -320,7 +510,7 @@ func (a *App) RunAgentTask(task string, taskContext string) {
 			}
 		}
 
-		for step := range agent.RunLoop(a.agentCtx, a.client, task, taskContext, maxSteps) {
+		for step := range agent.RunLoop(a.agentCtx, a.client, task, taskContext, maxSteps, a.currentMode()) {
 			// Emit step to frontend
 			runtime.EventsEmit(a.ctx, "agent:step", step)
 

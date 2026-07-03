@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"agent-desktop/internal/config"
 )
 
 func TestGetOSInstructions_Windows(t *testing.T) {
@@ -47,7 +49,7 @@ func TestGetOSInstructions_NotEmpty(t *testing.T) {
 }
 
 func TestGetSystemPrompt_ContainsToolList(t *testing.T) {
-	prompt := GetSystemPrompt()
+	prompt := GetSystemPrompt(config.ModeGeneral)
 
 	// Should mention the main tools
 	expectedTools := []string{
@@ -67,7 +69,7 @@ func TestGetSystemPrompt_ContainsToolList(t *testing.T) {
 }
 
 func TestGetSystemPrompt_ContainsRules(t *testing.T) {
-	prompt := GetSystemPrompt()
+	prompt := GetSystemPrompt(config.ModeGeneral)
 
 	// Should contain critical rules
 	if !strings.Contains(strings.ToLower(prompt), "task_complete") {
@@ -83,7 +85,7 @@ func TestGetSystemPrompt_ContainsRules(t *testing.T) {
 }
 
 func TestGetSystemPrompt_ContainsOSInstructions(t *testing.T) {
-	prompt := GetSystemPrompt()
+	prompt := GetSystemPrompt(config.ModeGeneral)
 
 	// Should contain OS-specific text
 	osKeywords := map[string][]string{
@@ -107,11 +109,39 @@ func TestGetSystemPrompt_ContainsOSInstructions(t *testing.T) {
 }
 
 func TestGetSystemPrompt_NotEmpty(t *testing.T) {
-	prompt := GetSystemPrompt()
+	prompt := GetSystemPrompt(config.ModeGeneral)
 	if prompt == "" {
 		t.Error("System prompt should not be empty")
 	}
 	if len(prompt) < 100 {
 		t.Error("System prompt seems too short")
+	}
+}
+
+func TestGetSystemPrompt_CloudOpsMentionsTools(t *testing.T) {
+	prompt := GetSystemPrompt(config.ModeCloudOps)
+	for _, tool := range []string{"az_query", "az_propose", "task_complete"} {
+		if !strings.Contains(prompt, tool) {
+			t.Errorf("cloud ops prompt should mention tool %q", tool)
+		}
+	}
+	if strings.Contains(prompt, "run_command") {
+		t.Error("cloud ops prompt should not mention run_command")
+	}
+}
+
+func TestGetSystemPrompt_CloudOpsMentionsSafetyRules(t *testing.T) {
+	prompt := strings.ToLower(GetSystemPrompt(config.ModeCloudOps))
+	for _, phrase := range []string{"destructive", "subscription", "ambiguous"} {
+		if !strings.Contains(prompt, phrase) {
+			t.Errorf("cloud ops prompt should discuss %q", phrase)
+		}
+	}
+}
+
+func TestGetSystemPrompt_UnknownModeDefaultsToCloudOps(t *testing.T) {
+	prompt := GetSystemPrompt("not-a-real-mode")
+	if !strings.Contains(prompt, "az_query") {
+		t.Error("unrecognized mode should fail closed to the cloud ops persona")
 	}
 }

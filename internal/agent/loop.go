@@ -16,7 +16,7 @@ type Client interface {
 
 // RunLoop runs the agent loop to complete a task.
 // It yields Steps through the returned channel.
-func RunLoop(ctx context.Context, client Client, task string, taskContext string, maxSteps int) <-chan Step {
+func RunLoop(ctx context.Context, client Client, task string, taskContext string, maxSteps int, mode string) <-chan Step {
 	steps := make(chan Step)
 
 	go func() {
@@ -27,11 +27,11 @@ func RunLoop(ctx context.Context, client Client, task string, taskContext string
 
 		// Build initial messages
 		messages := []llm.Message{
-			{Role: "system", Content: GetSystemPrompt()},
+			{Role: "system", Content: GetSystemPrompt(mode)},
 			{Role: "user", Content: BuildUserMessage(task, taskContext)},
 		}
 
-		toolDefs := tools.GetToolDefinitions()
+		toolDefs := tools.GetToolDefinitions(mode)
 		stepNumber := 0
 		consecutiveTextResponses := 0
 		maxTextResponses := 2
@@ -99,7 +99,7 @@ func RunLoop(ctx context.Context, client Client, task string, taskContext string
 					steps <- NewToolCallStep(stepNumber, tc.Name, toolArgs)
 
 					// Execute the tool
-					result := tools.ExecuteTool(tc.Name, toolArgs)
+					result := tools.ExecuteTool(tc.Name, toolArgs, mode)
 
 					// Add tool result to messages
 					resultContent := result.Output
@@ -118,6 +118,12 @@ func RunLoop(ctx context.Context, client Client, task string, taskContext string
 					// Check if task_complete was called
 					if tc.Name == "task_complete" {
 						steps <- NewCompleteStep(stepNumber, result.Output)
+						return
+					}
+
+					// az_propose pauses the loop until the user approves/denies
+					if tc.Name == "az_propose" {
+						steps <- NewAwaitingApprovalStep(stepNumber, result.Output)
 						return
 					}
 				}
@@ -169,7 +175,7 @@ func RunLoop(ctx context.Context, client Client, task string, taskContext string
 // - Only completes when task_complete tool is called
 // - Returns assistant_message steps for conversational responses
 // - Includes updated messages in step for conversation persistence
-func ContinueConversation(ctx context.Context, client Client, messages []llm.Message, maxSteps int) <-chan Step {
+func ContinueConversation(ctx context.Context, client Client, messages []llm.Message, maxSteps int, mode string) <-chan Step {
 	steps := make(chan Step)
 
 	go func() {
@@ -179,7 +185,7 @@ func ContinueConversation(ctx context.Context, client Client, messages []llm.Mes
 		msgs := make([]llm.Message, len(messages))
 		copy(msgs, messages)
 
-		toolDefs := tools.GetToolDefinitions()
+		toolDefs := tools.GetToolDefinitions(mode)
 		stepNumber := 0
 
 		for stepNumber < maxSteps {
@@ -243,7 +249,7 @@ func ContinueConversation(ctx context.Context, client Client, messages []llm.Mes
 					steps <- NewToolCallStep(stepNumber, tc.Name, toolArgs)
 
 					// Execute the tool
-					result := tools.ExecuteTool(tc.Name, toolArgs)
+					result := tools.ExecuteTool(tc.Name, toolArgs, mode)
 
 					// Add tool result to messages
 					resultContent := result.Output
@@ -266,6 +272,14 @@ func ContinueConversation(ctx context.Context, client Client, messages []llm.Mes
 						completeStep := NewCompleteStep(stepNumber, result.Output)
 						completeStep.Messages = msgs
 						steps <- completeStep
+						return
+					}
+
+					// az_propose pauses the loop until the user approves/denies
+					if tc.Name == "az_propose" {
+						awaitingStep := NewAwaitingApprovalStep(stepNumber, result.Output)
+						awaitingStep.Messages = msgs
+						steps <- awaitingStep
 						return
 					}
 				}

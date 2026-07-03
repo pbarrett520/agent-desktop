@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"agent-desktop/internal/config"
 )
 
 func TestExecuteTool_ValidTool(t *testing.T) {
 	// Test get_current_directory which is simple
-	result := ExecuteTool("get_current_directory", map[string]interface{}{})
+	result := ExecuteTool("get_current_directory", map[string]interface{}{}, config.ModeGeneral)
 
 	if !result.Success {
 		t.Errorf("ExecuteTool failed: %s", result.Error)
@@ -17,7 +19,7 @@ func TestExecuteTool_ValidTool(t *testing.T) {
 }
 
 func TestExecuteTool_UnknownTool(t *testing.T) {
-	result := ExecuteTool("nonexistent_tool", map[string]interface{}{})
+	result := ExecuteTool("nonexistent_tool", map[string]interface{}{}, config.ModeGeneral)
 
 	if result.Success {
 		t.Error("ExecuteTool should fail for unknown tool")
@@ -29,7 +31,7 @@ func TestExecuteTool_UnknownTool(t *testing.T) {
 
 func TestExecuteTool_InvalidArgs(t *testing.T) {
 	// read_file requires a path argument
-	result := ExecuteTool("read_file", map[string]interface{}{})
+	result := ExecuteTool("read_file", map[string]interface{}{}, config.ModeGeneral)
 
 	if result.Success {
 		t.Error("ExecuteTool should fail for missing required args")
@@ -48,7 +50,7 @@ func TestExecuteTool_ReadFile(t *testing.T) {
 
 	result := ExecuteTool("read_file", map[string]interface{}{
 		"path": testFile,
-	})
+	}, config.ModeGeneral)
 
 	if !result.Success {
 		t.Errorf("ExecuteTool read_file failed: %s", result.Error)
@@ -70,7 +72,7 @@ func TestExecuteTool_WriteFile(t *testing.T) {
 	result := ExecuteTool("write_file", map[string]interface{}{
 		"path":    testFile,
 		"content": "test content",
-	})
+	}, config.ModeGeneral)
 
 	if !result.Success {
 		t.Errorf("ExecuteTool write_file failed: %s", result.Error)
@@ -86,7 +88,7 @@ func TestExecuteTool_RunCommand(t *testing.T) {
 	ResetSession() // Ensure clean state
 	result := ExecuteTool("run_command", map[string]interface{}{
 		"command": "echo hello",
-	})
+	}, config.ModeGeneral)
 
 	if !result.Success {
 		t.Errorf("ExecuteTool run_command failed: %s", result.Error)
@@ -96,10 +98,41 @@ func TestExecuteTool_RunCommand(t *testing.T) {
 	}
 }
 
+func TestExecuteTool_RunCommand_RefusedInCloudOpsMode(t *testing.T) {
+	result := ExecuteTool("run_command", map[string]interface{}{
+		"command": "echo hello",
+	}, config.ModeCloudOps)
+
+	if result.Success {
+		t.Error("run_command should be refused in cloud ops mode")
+	}
+}
+
+func TestExecuteTool_DeleteFile_RefusedInCloudOpsMode(t *testing.T) {
+	result := ExecuteTool("delete_file", map[string]interface{}{
+		"path":    "/tmp/whatever",
+		"confirm": true,
+	}, config.ModeCloudOps)
+
+	if result.Success {
+		t.Error("delete_file should be refused in cloud ops mode")
+	}
+}
+
+func TestExecuteTool_AzQuery_RefusedInGeneralMode(t *testing.T) {
+	result := ExecuteTool("az_query", map[string]interface{}{
+		"command": "az vm list",
+	}, config.ModeGeneral)
+
+	if result.Success {
+		t.Error("az_query should be refused in general mode")
+	}
+}
+
 func TestExecuteTool_TaskComplete(t *testing.T) {
 	result := ExecuteTool("task_complete", map[string]interface{}{
 		"summary": "All done!",
-	})
+	}, config.ModeGeneral)
 
 	if !result.Success {
 		t.Errorf("ExecuteTool task_complete failed: %s", result.Error)
@@ -109,14 +142,13 @@ func TestExecuteTool_TaskComplete(t *testing.T) {
 	}
 }
 
-func TestGetToolDefinitions(t *testing.T) {
-	defs := GetToolDefinitions()
+func TestGetToolDefinitions_GeneralMode(t *testing.T) {
+	defs := GetToolDefinitions(config.ModeGeneral)
 
 	if len(defs) == 0 {
 		t.Error("GetToolDefinitions should return tool definitions")
 	}
 
-	// Check that expected tools are present
 	expectedTools := []string{
 		"run_command",
 		"read_file",
@@ -140,10 +172,37 @@ func TestGetToolDefinitions(t *testing.T) {
 			t.Errorf("missing tool definition: %s", expected)
 		}
 	}
+
+	for _, forbidden := range []string{"az_query", "az_propose"} {
+		if toolNames[forbidden] {
+			t.Errorf("general mode should not expose %s", forbidden)
+		}
+	}
+}
+
+func TestGetToolDefinitions_CloudOpsMode(t *testing.T) {
+	defs := GetToolDefinitions(config.ModeCloudOps)
+
+	toolNames := make(map[string]bool)
+	for _, def := range defs {
+		toolNames[def.Function.Name] = true
+	}
+
+	for _, expected := range []string{"az_query", "az_propose", "read_file", "write_file", "list_directory", "copy_file", "move_file", "task_complete"} {
+		if !toolNames[expected] {
+			t.Errorf("cloud ops mode missing tool definition: %s", expected)
+		}
+	}
+
+	for _, forbidden := range []string{"run_command", "delete_file"} {
+		if toolNames[forbidden] {
+			t.Errorf("cloud ops mode should not expose %s", forbidden)
+		}
+	}
 }
 
 func TestGetToolDefinitions_HasRequiredFields(t *testing.T) {
-	defs := GetToolDefinitions()
+	defs := GetToolDefinitions(config.ModeGeneral)
 
 	for _, def := range defs {
 		if def.Type != "function" {

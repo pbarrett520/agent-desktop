@@ -1,4 +1,4 @@
-# Agent Desktop Go - Project Session Summary
+# Nimbus - Project Session Summary
 
 ## Overview
 
@@ -95,7 +95,7 @@ font: Arial, Helvetica, system-ui
 ## Architecture
 
 ```
-agent-desktop-go/
+nimbus/
 ├── main.go                 # Wails entry point
 ├── app.go                  # App struct with bound methods
 ├── internal/

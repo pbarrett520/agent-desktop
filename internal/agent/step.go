@@ -15,6 +15,7 @@ const (
 	StepTypeError            = "error"
 	StepTypeUsage            = "usage"
 	StepTypeAssistantMessage = "assistant_message" // Conversational response (not task completion)
+	StepTypeAwaitingApproval = "awaiting_approval" // az_propose was called; paused until user approves/denies
 )
 
 // Step represents a single step in the agent's execution.
@@ -101,6 +102,17 @@ func NewUsageStep(stepNumber int, usage *TokenUsage) Step {
 		Type:       StepTypeUsage,
 		Content:    "",
 		Usage:      usage,
+	}
+}
+
+// NewAwaitingApprovalStep creates a step signaling the agent has proposed a
+// command and is paused until the user approves or denies it.
+func NewAwaitingApprovalStep(stepNumber int, proposalJSON string) Step {
+	return Step{
+		StepNumber: stepNumber,
+		Type:       StepTypeAwaitingApproval,
+		Content:    proposalJSON,
+		ToolName:   "az_propose",
 	}
 }
 

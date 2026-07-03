@@ -2,6 +2,8 @@ package tools
 
 import (
 	"fmt"
+
+	"agent-desktop/internal/config"
 )
 
 // ToolFunction represents a function definition in OpenAI format.
@@ -17,34 +19,109 @@ type ToolDefinition struct {
 	Function ToolFunction `json:"function"`
 }
 
-// toolDefinitions contains all available tool definitions.
-var toolDefinitions = []ToolDefinition{
+// runCommandTool is only exposed in ModeGeneral. In ModeCloudOps it is
+// replaced by az_query/az_propose so every az invocation goes through the
+// safety classifier.
+var runCommandTool = ToolDefinition{
+	Type: "function",
+	Function: ToolFunction{
+		Name:        "run_command",
+		Description: "Execute a shell command and return the output. Use this to run any command-line operation.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"command": map[string]interface{}{
+					"type":        "string",
+					"description": "The shell command to execute",
+				},
+				"working_dir": map[string]interface{}{
+					"type":        "string",
+					"description": "Directory to run the command in. If not specified, uses the current working directory.",
+				},
+				"timeout": map[string]interface{}{
+					"type":        "integer",
+					"description": "Maximum time in seconds to wait for the command. Default is 60.",
+					"default":     60,
+				},
+			},
+			"required": []string{"command"},
+		},
+	},
+}
+
+// deleteFileTool is only exposed in ModeGeneral. Cloud ops consultants don't
+// need to delete local files as part of the agent's job, and removing it
+// narrows the blast radius of a compromised or confused agent.
+var deleteFileTool = ToolDefinition{
+	Type: "function",
+	Function: ToolFunction{
+		Name:        "delete_file",
+		Description: "Delete a file. Use with caution.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path to the file to delete",
+				},
+				"confirm": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Must be true to confirm deletion",
+				},
+			},
+			"required": []string{"path", "confirm"},
+		},
+	},
+}
+
+// cloudOnlyTools are only exposed in ModeCloudOps.
+var cloudOnlyTools = []ToolDefinition{
 	{
 		Type: "function",
 		Function: ToolFunction{
-			Name:        "run_command",
-			Description: "Execute a shell command and return the output. Use this to run any command-line operation.",
+			Name:        "az_query",
+			Description: "Execute a READ-only az CLI command (show/list/get-*/describe/etc.) and return its output directly. Refuses and tells you to use az_propose if the command isn't classified as READ-tier.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"command": map[string]interface{}{
 						"type":        "string",
-						"description": "The shell command to execute",
-					},
-					"working_dir": map[string]interface{}{
-						"type":        "string",
-						"description": "Directory to run the command in. If not specified, uses the current working directory.",
-					},
-					"timeout": map[string]interface{}{
-						"type":        "integer",
-						"description": "Maximum time in seconds to wait for the command. Default is 60.",
-						"default":     60,
+						"description": "The az CLI command to execute, e.g. 'az vm list --resource-group rg-prod'",
 					},
 				},
 				"required": []string{"command"},
 			},
 		},
 	},
+	{
+		Type: "function",
+		Function: ToolFunction{
+			Name:        "az_propose",
+			Description: "Propose an az CLI command that changes state (MUTATE or DESTRUCTIVE tier). Does NOT execute — it returns an approval card to the user with your explanation and a rollback hint. Wait for the user's decision before assuming it ran.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"command": map[string]interface{}{
+						"type":        "string",
+						"description": "The exact az CLI command you want to run",
+					},
+					"explanation": map[string]interface{}{
+						"type":        "string",
+						"description": "Plain-English explanation of what this command does and why you're proposing it",
+					},
+					"rollback_hint": map[string]interface{}{
+						"type":        "string",
+						"description": "How to undo this if it goes wrong, or a note that it cannot be undone",
+					},
+				},
+				"required": []string{"command", "explanation", "rollback_hint"},
+			},
+		},
+	},
+}
+
+// sharedToolDefinitions are available in both ModeGeneral and ModeCloudOps.
+var sharedToolDefinitions = []ToolDefinition{
 	{
 		Type: "function",
 		Function: ToolFunction{
@@ -168,27 +245,6 @@ var toolDefinitions = []ToolDefinition{
 	{
 		Type: "function",
 		Function: ToolFunction{
-			Name:        "delete_file",
-			Description: "Delete a file. Use with caution.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"path": map[string]interface{}{
-						"type":        "string",
-						"description": "Path to the file to delete",
-					},
-					"confirm": map[string]interface{}{
-						"type":        "boolean",
-						"description": "Must be true to confirm deletion",
-					},
-				},
-				"required": []string{"path", "confirm"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: ToolFunction{
 			Name:        "copy_file",
 			Description: "Copy a file to a new location.",
 			Parameters: map[string]interface{}{
@@ -230,15 +286,30 @@ var toolDefinitions = []ToolDefinition{
 	},
 }
 
-// GetToolDefinitions returns all available tool definitions in OpenAI format.
-func GetToolDefinitions() []ToolDefinition {
-	return toolDefinitions
+// GetToolDefinitions returns the tool definitions available for mode.
+// ModeGeneral gets run_command/delete_file; ModeCloudOps gets az_query/
+// az_propose instead. All other tools are shared between both modes.
+// Unrecognized modes default to ModeCloudOps (fail closed).
+func GetToolDefinitions(mode string) []ToolDefinition {
+	defs := make([]ToolDefinition, 0, len(sharedToolDefinitions)+2)
+	if mode == config.ModeGeneral {
+		defs = append(defs, runCommandTool, deleteFileTool)
+	} else {
+		defs = append(defs, cloudOnlyTools...)
+	}
+	defs = append(defs, sharedToolDefinitions...)
+	return defs
 }
 
-// ExecuteTool executes a tool by name with the given arguments.
-func ExecuteTool(name string, args map[string]interface{}) ToolResult {
+// ExecuteTool executes a tool by name with the given arguments, gated by
+// mode so a cloud-ops session can't be tricked into running run_command or
+// delete_file even if the model hallucinates the call.
+func ExecuteTool(name string, args map[string]interface{}, mode string) ToolResult {
 	switch name {
 	case "run_command":
+		if mode != config.ModeGeneral {
+			return ToolResult{Success: false, Error: "run_command is not available in cloud ops mode. Use az_query or az_propose."}
+		}
 		command, ok := args["command"].(string)
 		if !ok {
 			return ToolResult{Success: false, Error: "run_command requires 'command' argument"}
@@ -251,6 +322,28 @@ func ExecuteTool(name string, args map[string]interface{}) ToolResult {
 			timeout = t
 		}
 		return RunCommand(command, workingDir, timeout)
+
+	case "az_query":
+		if mode != config.ModeCloudOps {
+			return ToolResult{Success: false, Error: "az_query is only available in cloud ops mode."}
+		}
+		command, ok := args["command"].(string)
+		if !ok {
+			return ToolResult{Success: false, Error: "az_query requires 'command' argument"}
+		}
+		return AzQuery(command)
+
+	case "az_propose":
+		if mode != config.ModeCloudOps {
+			return ToolResult{Success: false, Error: "az_propose is only available in cloud ops mode."}
+		}
+		command, ok := args["command"].(string)
+		if !ok {
+			return ToolResult{Success: false, Error: "az_propose requires 'command' argument"}
+		}
+		explanation, _ := args["explanation"].(string)
+		rollbackHint, _ := args["rollback_hint"].(string)
+		return AzPropose(command, explanation, rollbackHint)
 
 	case "read_file":
 		path, ok := args["path"].(string)
@@ -315,6 +408,9 @@ func ExecuteTool(name string, args map[string]interface{}) ToolResult {
 		return TaskComplete(summary, filesModified)
 
 	case "delete_file":
+		if mode != config.ModeGeneral {
+			return ToolResult{Success: false, Error: "delete_file is not available in cloud ops mode."}
+		}
 		path, ok := args["path"].(string)
 		if !ok {
 			return ToolResult{Success: false, Error: "delete_file requires 'path' argument"}

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"agent-desktop/internal/config"
 	"agent-desktop/internal/llm"
 	"agent-desktop/internal/tools"
 )
@@ -61,7 +62,7 @@ func TestRunLoop_TaskComplete(t *testing.T) {
 	ctx := context.Background()
 
 	var steps []Step
-	for step := range RunLoop(ctx, client, "Do something", "", 20) {
+	for step := range RunLoop(ctx, client, "Do something", "", 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -110,7 +111,7 @@ func TestRunLoop_MaxSteps(t *testing.T) {
 
 	var steps []Step
 	maxSteps := 3
-	for step := range RunLoop(ctx, client, "Do something", "", maxSteps) {
+	for step := range RunLoop(ctx, client, "Do something", "", maxSteps, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -146,7 +147,7 @@ func TestRunLoop_EmitsUsage(t *testing.T) {
 	ctx := context.Background()
 
 	hasUsage := false
-	for step := range RunLoop(ctx, client, "test", "", 20) {
+	for step := range RunLoop(ctx, client, "test", "", 20, config.ModeGeneral) {
 		if step.Type == StepTypeUsage && step.Usage != nil {
 			hasUsage = true
 		}
@@ -186,7 +187,7 @@ func TestRunLoop_ToolExecution(t *testing.T) {
 	ctx := context.Background()
 
 	var steps []Step
-	for step := range RunLoop(ctx, client, "Get current directory", "", 20) {
+	for step := range RunLoop(ctx, client, "Get current directory", "", 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -226,7 +227,7 @@ func TestRunLoop_ContextCancellation(t *testing.T) {
 	cancel()
 
 	var steps []Step
-	for step := range RunLoop(ctx, client, "test", "", 20) {
+	for step := range RunLoop(ctx, client, "test", "", 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -268,7 +269,7 @@ func TestContinueConversation_WithExistingMessages(t *testing.T) {
 	}
 
 	var steps []Step
-	for step := range ContinueConversation(ctx, client, existingMessages, 20) {
+	for step := range ContinueConversation(ctx, client, existingMessages, 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -302,7 +303,7 @@ func TestContinueConversation_ReturnsAssistantMessage(t *testing.T) {
 	}
 
 	var steps []Step
-	for step := range ContinueConversation(ctx, client, existingMessages, 20) {
+	for step := range ContinueConversation(ctx, client, existingMessages, 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -348,7 +349,7 @@ func TestContinueConversation_ReturnsUpdatedMessages(t *testing.T) {
 	}
 
 	var finalMessages []llm.Message
-	for step := range ContinueConversation(ctx, client, existingMessages, 20) {
+	for step := range ContinueConversation(ctx, client, existingMessages, 20, config.ModeGeneral) {
 		if step.Messages != nil {
 			finalMessages = step.Messages
 		}
@@ -377,7 +378,7 @@ func TestContinueConversation_DoesNotAutoComplete(t *testing.T) {
 	}
 
 	var steps []Step
-	for step := range ContinueConversation(ctx, client, existingMessages, 20) {
+	for step := range ContinueConversation(ctx, client, existingMessages, 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -425,7 +426,7 @@ func TestContinueConversation_ToolCallsWork(t *testing.T) {
 	}
 
 	var steps []Step
-	for step := range ContinueConversation(ctx, client, existingMessages, 20) {
+	for step := range ContinueConversation(ctx, client, existingMessages, 20, config.ModeGeneral) {
 		steps = append(steps, step)
 	}
 
@@ -445,5 +446,49 @@ func TestContinueConversation_ToolCallsWork(t *testing.T) {
 	}
 	if !hasToolResult {
 		t.Error("Should emit tool_result step")
+	}
+}
+
+func TestContinueConversation_AzProposePausesTheLoop(t *testing.T) {
+	client := &mockClient{
+		responses: []mockResponse{
+			{
+				toolCalls: []llm.ToolCall{
+					{ID: "call_1", Name: "az_propose", Arguments: `{"command": "az group delete --name rg-old --yes", "explanation": "Removes decommissioned dev group", "rollback_hint": "Cannot be undone"}`},
+				},
+			},
+			// If the loop incorrectly kept going, this would be consumed and
+			// we'd see a second tool call in the emitted steps.
+			{
+				toolCalls: []llm.ToolCall{
+					{ID: "call_2", Name: "task_complete", Arguments: `{"summary": "should not get here"}`},
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	existingMessages := []llm.Message{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "delete the old dev resource group"},
+	}
+
+	var steps []Step
+	for step := range ContinueConversation(ctx, client, existingMessages, 20, config.ModeCloudOps) {
+		steps = append(steps, step)
+	}
+
+	if len(steps) == 0 {
+		t.Fatal("expected at least one step")
+	}
+	last := steps[len(steps)-1]
+	if last.Type != StepTypeAwaitingApproval {
+		t.Fatalf("expected the loop to stop at awaiting_approval, last step was %s", last.Type)
+	}
+	if !strings.Contains(last.Content, "az group delete") {
+		t.Errorf("awaiting_approval step should carry the proposal, got: %s", last.Content)
+	}
+	if client.callCount != 1 {
+		t.Errorf("loop should not call the LLM again after az_propose, callCount = %d", client.callCount)
 	}
 }

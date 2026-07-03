@@ -202,7 +202,7 @@ func (c *Client) ChatCompletion(ctx context.Context, messages []Message, toolDef
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Build URL - standard OpenAI format
+	// Build URL - standard OpenAI-compatible format
 	url := fmt.Sprintf("%s/chat/completions", c.endpoint)
 
 	// Create HTTP request

@@ -13,12 +13,16 @@ import {
   RenameConversation,
   GetActiveConversation,
   SendMessage,
-  StopAgent
+  StopAgent,
+  ResolveProposal
 } from '../wailsjs/go/main/App';
 import { conversation } from '../wailsjs/go/models';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import ConversationSidebar from './components/ConversationSidebar';
+import { Proposal } from './components/ApprovalCard';
+import AuditPanel from './components/AuditPanel';
+import DashboardPanel from './components/DashboardPanel';
 import './style.css';
 
 interface Config {
@@ -26,6 +30,7 @@ interface Config {
   endpoint: string;
   model: string;
   execution_timeout: number;
+  mode: string;
 }
 
 interface Step {
@@ -75,7 +80,11 @@ function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [currentSteps, setCurrentSteps] = useState<Step[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  
+  const [pendingProposal, setPendingProposal] = useState<Proposal | null>(null);
+  const [resolvingProposal, setResolvingProposal] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+
   const currentStepsRef = useRef<Step[]>([]);
 
   useEffect(() => {
@@ -264,11 +273,17 @@ function App() {
       setCurrentSteps([]);
     });
 
+    const unsubscribeAwaitingApproval = EventsOn('agent:awaiting_approval', (proposal: Proposal) => {
+      setIsRunning(false);
+      setPendingProposal(proposal);
+    });
+
     return () => {
       unsubscribeStep();
       unsubscribeComplete();
       unsubscribeMessage();
       unsubscribeError();
+      unsubscribeAwaitingApproval();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -367,6 +382,21 @@ function App() {
     }
   }, []);
 
+  const handleResolveProposal = useCallback(async (approved: boolean) => {
+    if (!pendingProposal) return;
+    setResolvingProposal(true);
+    setIsRunning(true);
+    try {
+      await ResolveProposal(pendingProposal.id, approved);
+    } catch (err) {
+      console.error('Failed to resolve proposal:', err);
+      setIsRunning(false);
+    } finally {
+      setPendingProposal(null);
+      setResolvingProposal(false);
+    }
+  }, [pendingProposal]);
+
   const handleStopAgent = useCallback(async () => {
     try {
       await StopAgent();
@@ -384,20 +414,15 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen flex bg-matrix-black overflow-hidden relative">
-      {/* CRT Effects Overlays */}
-      <div className="crt-overlay" />
-      <div className="noise-overlay" />
-      <div className="vignette" />
-      
+    <div className="h-screen flex bg-brand-black overflow-hidden relative">
       {/* Collapsible sidebar container */}
       <div className={`flex transition-all duration-300 ${sidebarCollapsed ? 'w-12' : ''}`}>
         {sidebarCollapsed ? (
           /* Collapsed state */
-          <div className="w-12 bg-matrix-darker border-r border-matrix-border flex flex-col items-center py-3 gap-3">
+          <div className="w-12 bg-brand-darker border-r border-brand-border flex flex-col items-center py-3 gap-3">
             <button
               onClick={() => setSidebarCollapsed(false)}
-              className="p-2 hover:bg-matrix-green/10 rounded text-matrix-green-dim hover:text-matrix-green transition-colors"
+              className="p-2 hover:bg-brand-cyan/10 rounded text-brand-cyan-dim hover:text-brand-cyan transition-colors"
               title="Expand sidebar"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -406,7 +431,7 @@ function App() {
             </button>
             <button
               onClick={handleNewConversation}
-              className="p-2 hover:bg-matrix-green/10 rounded text-matrix-green transition-colors"
+              className="p-2 hover:bg-brand-cyan/10 rounded text-brand-cyan transition-colors"
               title="New Session"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -451,7 +476,16 @@ function App() {
         onSendMessage={handleSendMessage}
         onStopAgent={handleStopAgent}
         onNewConversation={handleNewConversation}
+        pendingProposal={pendingProposal}
+        onApproveProposal={() => handleResolveProposal(true)}
+        onDenyProposal={() => handleResolveProposal(false)}
+        resolvingProposal={resolvingProposal}
+        onOpenAudit={() => setShowAudit(true)}
+        onOpenDashboard={() => setShowDashboard(true)}
       />
+
+      {showAudit && <AuditPanel onClose={() => setShowAudit(false)} />}
+      {showDashboard && <DashboardPanel onClose={() => setShowDashboard(false)} />}
     </div>
   );
 }
