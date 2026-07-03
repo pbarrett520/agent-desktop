@@ -3,6 +3,7 @@ import { conversation } from '../../wailsjs/go/models';
 import AgentStepDisplay from './AgentStepDisplay';
 import AzureContextStrip from './AzureContextStrip';
 import ApprovalCard, { Proposal } from './ApprovalCard';
+import MarkdownContent from './MarkdownContent';
 
 interface Step {
   step_number: number;
@@ -230,7 +231,11 @@ export default function ChatInterface({
                     }`}>
                       {msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'Agent'}
                     </div>
-                    <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
+                    {msg.role === 'user' ? (
+                      <div className="whitespace-pre-wrap break-words text-sm">{msg.content}</div>
+                    ) : (
+                      <MarkdownContent content={msg.content} />
+                    )}
                   </div>
                 </div>
 
